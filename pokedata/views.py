@@ -16,3 +16,7 @@ def pokemon_table(request):
 def team_builder(request):
     species_list = Species.objects.all().order_by("pokedex_id")
     return render(request, "team_builder.html", {"species_list": species_list})
+
+def Moves(request):
+    moves_list = Moves.objects.all().order_by("id")
+    return render(request, "moves.html", {"moves_list": moves_list})

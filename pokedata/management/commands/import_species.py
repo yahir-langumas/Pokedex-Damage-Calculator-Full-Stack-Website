@@ -4,12 +4,15 @@ import requests
 from django.core.management.base import BaseCommand
 from pokedata.models import Species 
 
+# Use the API to get the data for each species (Pokemon) and store it in the database.
+
 class Command(BaseCommand):
     def handle (self, *args, **options):
         species_id = 1
         max_species_id = 1025
         while species_id <= max_species_id:
-            poke_api_response = requests.get(f"https://pokeapi.co/api/v2/pokemon/{species_id}/")
+            poke_api_response = requests.get(f"https://pokeapi.co/api/v2/pokemon/{species_id}/", timeout = 10)
+            poke_api_response.raise_for_status()  # Raise an error if the request was unsuccessful
             pokemon_data = poke_api_response.json()
             pokemon_types = [type_info["type"]["name"] for type_info in pokemon_data["types"]]
             pokemon_abilities = [ability_info["ability"]["name"] for ability_info in pokemon_data["abilities"]]

@@ -1,6 +1,6 @@
 from django.db import models
 
-# Create your models here.
+# Creation of database models for the Pokemon data.
 
 class Species(models.Model): 
     name = models.CharField(max_length=100)
@@ -29,5 +29,11 @@ class Moves(models.Model):
     priority = models.IntegerField()
     type = models.CharField(max_length=100)
     damage_class = models.CharField(max_length=100)
+    def __str__(self):
+        return self.name
+class Learnset(models.Model): 
+    name = models.CharField(max_length=100)
+    moves = models.JSONField()
+    species_id = models.IntegerField(unique=True)
     def __str__(self):
         return self.name

@@ -3,15 +3,21 @@ import requests
 from django.core.management.base import BaseCommand
 from pokedata.models import Moves
 
+# Use the API to get the data for each move and store it in the database.
+
 class Command(BaseCommand):
     def handle(self, *args, **options):
         move_id = 1
         max_move_id = 919 
         while move_id <= max_move_id: 
-            poke_api_response = requests.get(f"https://pokeapi.co/api/v2/move/{move_id}/")
+            poke_api_response = requests.get(f"https://pokeapi.co/api/v2/move/{move_id}/", timeout = 10)
+            poke_api_response.raise_for_status()  # Raise an error if the request was unsuccessful  
             move_data = poke_api_response.json()
             damage_class = move_data["damage_class"]["name"]
             type = move_data["type"]["name"]
+            # Meta refers to the metadata of the move, so attributes like move effect such as "has a 30% chance to paralyze the target"
+            #  or "increases the user's speed by 1 stage" would be stored in this field.
+            # Also the stat changes of the move would be stored in this field.
             if move_data["meta"] is not None: 
                 meta = {
                     "ailment": move_data["meta"]["ailment"]["name"] if move_data["meta"]["ailment"] else None,
