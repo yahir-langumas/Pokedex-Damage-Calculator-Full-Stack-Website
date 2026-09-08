@@ -11,6 +11,9 @@
 # Need a class for specific status effects like burn, paralysis, poison, sleep, freeze ...  ect
 # Need a class for specific stat changes like attack, defense, special attack, special defense, speed ... ect
 from pokedata.models import Species
+from pokedata.models import Moves
+from pokedata.models import Learnset
+
 
 class DamageCalculator:
     def __init__(self, attacker: Species, defender: Species, move_type: str, move_power: int): 
@@ -18,6 +21,28 @@ class DamageCalculator:
         self.defender = defender
         self.move_type = move_type
         self.move_power = move_power
+        self.attacker_learnset = Learnset.objects.get(species_id=self.attacker.pokedex_id)
 
     def sound_move(self): 
         pass
+    def cut_move(self):
+        pass
+    def levitate_ability(self):
+        pass
+    def wonder_guard_ability(self):
+        "wonder-guard" in self.defender.abilities
+        pass
+    def huge_power_ability(self):
+        pass
+    def thick_fat_ability(self):
+        pass
+    def filter_ability(self):
+        pass
+    def solid_rock_ability(self):
+        pass
+    def life_orb_item(self):
+        pass
+    def choice_band_item(self):
+        pass
+
+        

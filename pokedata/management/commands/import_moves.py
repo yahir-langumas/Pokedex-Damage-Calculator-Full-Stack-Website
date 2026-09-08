@@ -16,7 +16,7 @@ class Command(BaseCommand):
             damage_class = move_data["damage_class"]["name"]
             type = move_data["type"]["name"]
             # Meta refers to the metadata of the move, so attributes like move effect such as "has a 30% chance to paralyze the target"
-            #  or "increases the user's speed by 1 stage" would be stored in this field.
+            # or "increases the user's speed by 1 stage" would be stored in this field.
             # Also the stat changes of the move would be stored in this field.
             if move_data["meta"] is not None: 
                 meta = {

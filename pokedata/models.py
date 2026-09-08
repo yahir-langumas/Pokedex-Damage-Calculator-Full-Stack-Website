@@ -15,6 +15,7 @@ class Species(models.Model):
     sprite = models.URLField()
     def __str__(self):
         return self.name
+    
 class Moves(models.Model): 
     name = models.CharField(max_length=100)
     move_id = models.IntegerField(unique = True)
@@ -31,9 +32,16 @@ class Moves(models.Model):
     damage_class = models.CharField(max_length=100)
     def __str__(self):
         return self.name
+    
 class Learnset(models.Model): 
     name = models.CharField(max_length=100)
     moves = models.JSONField()
     species_id = models.IntegerField(unique=True)
+    def __str__(self):
+        return self.name
+
+class Type(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    type_data = models.JSONField()
     def __str__(self):
         return self.name

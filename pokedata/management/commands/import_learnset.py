@@ -16,6 +16,8 @@ class Command(BaseCommand):
                 # Used to avoid duplicates in the moves list for a pokemon.
                 for move_entry in pokemon_learnset["moves"]: 
                      for version_detail in move_entry["version_group_details"]: 
+                          # Using Scarlet-Violet as the game version to determine the moves a pokemon can learn.
+                          # Currently all pokemon are updated, until Pokemon Champions add all Pokemon from the pokedex. 
                           if version_detail["version_group"]["name"] == "scarlet-violet": 
                                moves_known.add(move_entry["move"]["name"])
                 pokedex_id = pokemon_learnset["id"]
