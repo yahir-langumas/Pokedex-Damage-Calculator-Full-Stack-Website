@@ -11,7 +11,8 @@
 # Need a class for specific status effects like burn, paralysis, poison, sleep, freeze ...  ect
 # Need a class for specific stat changes like attack, defense, special attack, special defense, speed ... ect
 from pokedata.models import Species
-from pokedata.models import Moves
+# from pokedata.models import Moves
+# Not going to use for now because everything I need exist in learnset 
 from pokedata.models import Learnset
 from pokedata.models import Type
 
@@ -80,33 +81,34 @@ POWDER_AND_SPORE_MOVES = {
 }
 
 class DamageCalculator:
-    def __init__(self, attacker: Species, defender: Species, move_type: str, move_power: int):
+    def __init__(self, attacker: Species, defender: Species, move_type: str, move_power: int, move_name: str):
         self.attacker = attacker
         self.defender = defender
         self.move_type = move_type
         self.move_power = move_power
+        self.move_name = move_name
         self.attacker_learnset = Learnset.objects.get(species_id=self.attacker.pokedex_id)
         self.defender_learnset = Learnset.objects.get(species_id=self.defender.pokedex_id)
         self.defender_types_data = [Type.objects.get(name=t).type_data for t in self.defender.types]
 
     def sound_move(self): 
-        return self.move_type in SOUND_MOVES
+        return self.move_name in SOUND_MOVES
     def cut_move(self):
-        return self.move_type in SLICING_MOVES
+        return self.move_name in SLICING_MOVES
     def claw_move(self):
-        return self.move_type in CLAW_MOVES
+        return self.move_name in CLAW_MOVES
     def bite_move(self):
-        return self.move_type in BITING_MOVES
+        return self.move_name in BITING_MOVES
     def punch_move(self):
-        return self.move_type in PUNCHING_MOVES
+        return self.move_name in PUNCHING_MOVES
     def pulse_move(self):
-        return self.move_type in PULSE_MOVES
+        return self.move_name in PULSE_MOVES
     def wind_move(self):
-        return self.move_type in WIND_MOVES
+        return self.move_name in WIND_MOVES
     def ball_and_bomb_move(self):
-        return self.move_type in BALL_AND_BOMB_MOVES
+        return self.move_name in BALL_AND_BOMB_MOVES
     def powder_and_spore_move(self):
-        return self.move_type in POWDER_AND_SPORE_MOVES
+        return self.move_name in POWDER_AND_SPORE_MOVES
     
     def levitate_ability(self):
         if "levitate" not in self.defender.abilities: 
@@ -133,7 +135,10 @@ class DamageCalculator:
         return self.move_power * 0
        
     def huge_power_ability(self):
-        pass
+        if "huge-power" not in self.attacker.abilities: 
+            return self.attacker.stats["attack"] 
+        return self.attacker.stats["attack"] * 2
+        
     def thick_fat_ability(self):
         pass
     def filter_ability(self):
