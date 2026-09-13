@@ -51,6 +51,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
     gap: 1.25rem;
+    align-items: start;
   }
 
   .pokemon-card {
@@ -61,6 +62,7 @@
     text-align: center;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
     transition: transform 0.15s ease, box-shadow 0.15s ease;
+    cursor: pointer;
   }
 
   .pokemon-card:hover {
@@ -149,6 +151,38 @@
   .type-dark     { background: #705848; }
   .type-steel    { background: #B8B8D0; color: #3a3a48; }
   .type-fairy    { background: #EE99AC; color: #5c1f2c; }
+
+  /* Expandable details (Bulbapedia / Smogon / Limitless VGC) */
+  .pokemon-details {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.25s ease;
+  }
+
+  .pokemon-card.expanded .pokemon-details {
+    max-height: 140px;
+  }
+
+  .pokemon-details-inner {
+    padding-top: 0.65rem;
+    margin-top: 0.65rem;
+    border-top: 1px solid #eee;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    text-align: left;
+  }
+
+  .detail-link {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #2a5db0;
+    text-decoration: none;
+  }
+
+  .detail-link:hover {
+    text-decoration: underline;
+  }
 </style>
 
 <div class="dex-wrap">
@@ -182,6 +216,13 @@
         {% endfor %}
       </div>
       <div class="bst-badge">BST {{ pokemon.total_stats }}</div>
+      <div class="pokemon-details">
+        <div class="pokemon-details-inner">
+          <a href="#" class="detail-link detail-link-bulbapedia" target="_blank" rel="noopener">Bulbapedia — Species Info</a>
+          <a href="#" class="detail-link detail-link-smogon" target="_blank" rel="noopener">Smogon Dex — Full Details &amp; Sets</a>
+          <a href="#" class="detail-link detail-link-limitless" target="_blank" rel="noopener">Limitless VGC — Competitive Results</a>
+        </div>
+      </div>
     </div>
     {% empty %}
     <div class="dex-empty">No Pokémon found yet — make sure your view is passing a "species_list" of Species objects into this template.</div>
@@ -209,5 +250,58 @@
   }
 
   document.addEventListener('DOMContentLoaded', filterPokemon);
+
+  // ---- Expandable details (Bulbapedia / Smogon / Limitless VGC) ----
+
+  function toBulbapediaTitle(slug) {
+    // Known limitation: breaks on some special-form/gendered/apostrophe names
+    // (regional forms, Mr. Mime, Farfetch'd) since Bulbapedia titles don't
+    // follow one predictable pattern for those. Fine for the general case.
+    const capitalized = slug
+      .split('-')
+      .map(function (part) { return part.charAt(0).toUpperCase() + part.slice(1); })
+      .join('_');
+    return capitalized + '_(Pok%C3%A9mon)';
+  }
+
+  function buildPokemonLinks(slug) {
+    return {
+      bulbapedia: 'https://bulbapedia.bulbagarden.net/wiki/' + toBulbapediaTitle(slug),
+      smogon: 'https://www.smogon.com/dex/sv/pokemon/' + slug + '/',
+      limitless: 'https://limitlessvgc.com/pokemon/' + slug + '/results'
+    };
+  }
+
+  function initPokemonDetailLinks() {
+    document.querySelectorAll('.pokemon-card').forEach(function (card) {
+      const slug = card.getAttribute('data-name');
+      if (!slug) return;
+      const links = buildPokemonLinks(slug);
+      const bulbapediaLink = card.querySelector('.detail-link-bulbapedia');
+      const smogonLink = card.querySelector('.detail-link-smogon');
+      const limitlessLink = card.querySelector('.detail-link-limitless');
+      if (bulbapediaLink) bulbapediaLink.href = links.bulbapedia;
+      if (smogonLink) smogonLink.href = links.smogon;
+      if (limitlessLink) limitlessLink.href = links.limitless;
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', initPokemonDetailLinks);
+
+  document.getElementById('pokemonGrid').addEventListener('click', function (e) {
+    if (e.target.closest('a')) return;
+    const card = e.target.closest('.pokemon-card');
+    if (!card) return;
+
+    const wasExpanded = card.classList.contains('expanded');
+
+    document.querySelectorAll('.pokemon-card.expanded').forEach(function (openCard) {
+      openCard.classList.remove('expanded');
+    });
+
+    if (!wasExpanded) {
+      card.classList.add('expanded');
+    }
+  });
 </script>
 {% endblock %}
