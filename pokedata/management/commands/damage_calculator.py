@@ -11,8 +11,7 @@
 # Need a class for specific status effects like burn, paralysis, poison, sleep, freeze ...  ect
 # Need a class for specific stat changes like attack, defense, special attack, special defense, speed ... ect
 from pokedata.models import Species
-# from pokedata.models import Moves
-# Not going to use for now because everything I need exist in learnset 
+from pokedata.models import Moves
 from pokedata.models import Learnset
 from pokedata.models import Type
 
@@ -80,6 +79,7 @@ POWDER_AND_SPORE_MOVES = {
     "rage-powder", "sleep-powder", "spore", "stun-spore",
 }
 
+RECOIL_MOVES = {} 
 class DamageCalculator:
     def __init__(self, attacker: Species, defender: Species, move_type: str, move_power: int, move_name: str):
         self.attacker = attacker
@@ -90,6 +90,7 @@ class DamageCalculator:
         self.attacker_learnset = Learnset.objects.get(species_id=self.attacker.pokedex_id)
         self.defender_learnset = Learnset.objects.get(species_id=self.defender.pokedex_id)
         self.defender_types_data = [Type.objects.get(name=t).type_data for t in self.defender.types]
+        self.move_data = Moves.objects.get(name=self.move_name)
 
     def sound_move(self): 
         return self.move_name in SOUND_MOVES
@@ -109,6 +110,16 @@ class DamageCalculator:
         return self.move_name in BALL_AND_BOMB_MOVES
     def powder_and_spore_move(self):
         return self.move_name in POWDER_AND_SPORE_MOVES
+    def recoil_moves(self): 
+        return self.move_name in RECOIL_MOVES
+
+    def rock_head_ability(self):
+        if self.move_data.meta is None:
+            return 0
+        drain = self.move_data.meta.get("drain", 0)
+        if "rock-head" in self.attacker.abilities and drain < 0:
+            return 0
+        return drain
     
     def levitate_ability(self):
         if "levitate" not in self.defender.abilities: 
