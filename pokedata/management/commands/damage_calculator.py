@@ -79,7 +79,6 @@ POWDER_AND_SPORE_MOVES = {
     "rage-powder", "sleep-powder", "spore", "stun-spore",
 }
 
-RECOIL_MOVES = {} 
 class DamageCalculator:
     def __init__(self, attacker: Species, defender: Species, move_type: str, move_power: int, move_name: str):
         self.attacker = attacker
@@ -110,9 +109,15 @@ class DamageCalculator:
         return self.move_name in BALL_AND_BOMB_MOVES
     def powder_and_spore_move(self):
         return self.move_name in POWDER_AND_SPORE_MOVES
-    def recoil_moves(self): 
-        return self.move_name in RECOIL_MOVES
+    
+    # Pure Power doubles the user's total physical Attack stat in battle.
+    def pure_power_ability(self): 
+        if "pure-power" not in self.attacker.abilities: 
+           return self.attacker.stats["attack"] 
+        return self.attacker.stats["attack"] * 2
+         
 
+    # Rock Head protects a Pokémon from taking recoil damage when using high-power physical attacks
     def rock_head_ability(self):
         if self.move_data.meta is None:
             return 0
@@ -120,7 +125,9 @@ class DamageCalculator:
         if "rock-head" in self.attacker.abilities and drain < 0:
             return 0
         return drain
+        # Will add more logic to remove special effects of moves like recoil damage, stat changes, and status effects later.
     
+    # Levitate is an ability that gives a Pokémon full immunity to Ground-type moves, Spikes, Toxic Spikes, and the Arena Trap ability.
     def levitate_ability(self):
         if "levitate" not in self.defender.abilities: 
             return self.move_power 
@@ -128,7 +135,9 @@ class DamageCalculator:
             return self.move_power * 0 
         else: 
             return self.move_power
+        # Will add more logic later for the other effects of levitate like spikes, toxic spikes, and arena trap.
 
+    # Makes the user immune to all direct damaging moves unless they are super-effective
     def wonder_guard_ability(self):
         if "wonder-guard" not in self.defender.abilities:
             return self.move_power
@@ -144,12 +153,12 @@ class DamageCalculator:
         if multiplier > 1:
             return self.move_power
         return self.move_power * 0
-       
+    # Huge Power is a powerful Pokémon ability that doubles the user's actual Attack stat during battle   
     def huge_power_ability(self):
         if "huge-power" not in self.attacker.abilities: 
             return self.attacker.stats["attack"] 
         return self.attacker.stats["attack"] * 2
-        
+        # Will add more logic around IV and EV later to make it more accurate.
     def thick_fat_ability(self):
         pass
     def filter_ability(self):
@@ -160,5 +169,4 @@ class DamageCalculator:
         pass
     def choice_band_item(self):
         pass
-
-        
+ 

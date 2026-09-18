@@ -6,6 +6,7 @@ from .models import Species
 from .models import Moves
 from .models import Learnset
 from .models import Type
+from .models import Status_Effect
 
 # Must use python manage.py makemigrations in the python terminal every time you make a change to any database model. 
 # After that use python manage.py migrate to apply the changes to the database. 

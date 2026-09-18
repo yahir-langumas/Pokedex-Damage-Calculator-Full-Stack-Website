@@ -45,3 +45,9 @@ class Type(models.Model):
     type_data = models.JSONField()
     def __str__(self):
         return self.name
+
+class Status_Effect(models.Model): 
+    name = models.CharField(max_length=100, unique=True)
+    status_effect_data = models.JSONField() 
+    def __str__(self): 
+        return self.name
