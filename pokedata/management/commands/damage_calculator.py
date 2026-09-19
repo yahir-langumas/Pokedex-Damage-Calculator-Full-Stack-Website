@@ -1,21 +1,10 @@
 # DMG Calculator 
-# Need a class for spefic move types like sounds, cut .... ect
-# Need a class for specific abilities that have special effects like levitate, wonder guard ...  etc
-# Need a class for specific damage booster abilities like huge power ..... ect
-# Need a class for specific damage reducer abilities like thick fat, filter, solid rock ...  ect
-# Need a class for specific damage booster items like life orb, choice band, choice specs, choice scarf ...  ect
-# Need a class for specific damage reducer items like assault vest, safety goggles, ...  ect
-# Need a class for specific weather effects like sun, rain, sandstorm, hail ...  ect
-# Need a class for specific terrain effects like electric terrain, grassy terrain, psychic terrain ...  ect
-# Need a class for specific field effects like trick room, magic room, wonder room ...  ect (Not to necessary for DMG but nice to have)
-# Need a class for specific status effects like burn, paralysis, poison, sleep, freeze ...  ect
-# Need a class for specific stat changes like attack, defense, special attack, special defense, speed ... ect
 from pokedata.models import Species
 from pokedata.models import Moves
 from pokedata.models import Learnset
 from pokedata.models import Type
 
-# hard coding moves that have special effects like sound moves, cut moves, and other moves that have special effects.
+# Hard coding moves and abilities that have special properties that effect damage calculations and interactions with other moves and abilities.
 
 SOUND_MOVES = {
     "alluring-voice", "boomburst", "bug-buzz", "chatter", "clanging-scales",
@@ -78,6 +67,37 @@ POWDER_AND_SPORE_MOVES = {
     "cotton-spore", "magic-powder", "poison-powder", "powder",
     "rage-powder", "sleep-powder", "spore", "stun-spore",
 }
+
+STATUS_EFFECTS = { 
+    "burn": {"attack_multiplier": 0.5, "self_inflicted_dmg": 0.0625 }, # 1/16 hp lost per turn 
+    "poison": {"self_inflicted_dmg": 0.125}, # consistent 1/8 hp per turn 
+    "badly-poison": {"self_inflicted_dmg": 0.0625,}, # badly posion ramps-up dmg after each turn (by 1/16) 
+    "paralysis": {"speed_multiplier": 0.5, "fully_paralyzed_chance": 0.25}, # fully_paralyzed -> 25% a pokemon won't act for 1 turn 
+    "sleep": {"wake_up_chance_1": 0.3333}, # waking up from sleep has a 33% chance and a 100% on turn 4
+    "freeze": {"thaw_chance": 0.20},
+} 
+  
+STATUS_IMMUNITY_ABILITIES = {
+    "limber": "paralysis", "insomnia": "sleep", "vital-spirit": "sleep",
+    "water-veil": "burn", "water-bubble": "burn", "immunity": "poison",
+    "pastel-veil": "poison", "magma-armor": "freeze", "own-tempo": "confusion",     
+    "comatose": "all", "purifying-salt": "all",      
+}
+
+STATUS_STAT_BOOST_ABILITIES = {
+    "guts": "attack", "marvel-scale": "defense", "quick-feet": "speed",    
+}
+
+STATUS_MOVE_POWER_BOOST_ABILITIES = {
+    "toxic-boost": "poison", "flare-boost": "burn",    
+}
+
+STATUS_CURE_ABILITIES = {
+    "natural-cure": "on-switch-out", "shed-skin": "end-of-turn-chance", "hydration": "end-of-turn-if-raining", 
+    "healer": "end-of-turn-chance-ally", 
+}
+
+
 
 class DamageCalculator:
     def __init__(self, attacker: Species, defender: Species, move_type: str, move_power: int, move_name: str):
