@@ -69,37 +69,6 @@ POWDER_AND_SPORE_MOVES = {
     "rage-powder", "sleep-powder", "spore", "stun-spore",
 }
 
-STATUS_EFFECTS = { 
-    "burn": {"attack_multiplier": 0.5, "self_inflicted_dmg": 0.0625 }, # 1/16 hp lost per turn 
-    "poison": {"self_inflicted_dmg": 0.125}, # consistent 1/8 hp per turn 
-    "badly-poison": {"self_inflicted_dmg": 0.0625,}, # badly poison ramps-up dmg after each turn (by 1/16) 
-    "paralysis": {"speed_multiplier": 0.5, "fully_paralyzed_chance": 0.25}, # fully_paralyzed -> 25% a pokemon won't act for 1 turn 
-    "sleep": {"sleep_min_turns": 1, "sleep_max_turns": 3}, # Sleep is determined from a random number of turns a pokemon is asleep for between the range of 1-3.
-    "freeze": {"thaw_chance": 0.20},
-} 
-  
-STATUS_IMMUNITY_ABILITIES = {
-    "limber": "paralysis", "insomnia": "sleep", "vital-spirit": "sleep",
-    "water-veil": "burn", "water-bubble": "burn", "immunity": "poison",
-    "pastel-veil": "poison", "magma-armor": "freeze", "own-tempo": "confusion",     
-    "comatose": "all", "purifying-salt": "all",      
-}
-
-STATUS_STAT_BOOST_ABILITIES = {
-    "guts": "attack", "marvel-scale": "defense", "quick-feet": "speed",    
-}
-
-STATUS_MOVE_POWER_BOOST_ABILITIES = {
-    "toxic-boost": "poison", "flare-boost": "burn",    
-}
-
-STATUS_CURE_ABILITIES = {
-    "natural-cure": "on-switch-out", "shed-skin": "end-of-turn-chance", "hydration": "end-of-turn-if-raining", 
-    "healer": "end-of-turn-chance-ally", 
-}
-
-
-
 class DamageCalculator:
     def __init__(self, attacker: Species, defender: Species, move_type: str, move_power: int, move_name: str, status_effect: str):
         self.attacker = attacker
