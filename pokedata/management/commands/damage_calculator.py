@@ -79,6 +79,12 @@ EXPLOSIVE_MOVES = {
     "explosion", "mind-blown", "misty-explosion", "self-destruct",
 }
 
+# Moves that force the target to switch out (Suction Cups stops these).
+# Red Card does this too, but it's an item, so it'll go in with the items.
+FORCE_SWITCH_MOVES = {
+    "circle-throw", "dragon-tail", "roar", "whirlwind",
+}
+
 # Critical hit chance by crit stage (Gen 7+). Stage 3 and up always crits.
 CRIT_CHANCE_BY_STAGE = {0: 1 / 24, 1: 1 / 8, 2: 1 / 2, 3: 1}
 
@@ -115,6 +121,12 @@ STATUS_IMMUNITY_ABILITIES = {
     "water-veil": "burn", "water-bubble": "burn", "immunity": "poison",
     "pastel-veil": "poison", "magma-armor": "freeze", "own-tempo": "confusion",
     "comatose": "all", "purifying-salt": "all",
+}
+
+# Effects that aren't major statuses but some abilities still block. Since Gen 8, Oblivious and Own Tempo also block Intimidate.
+VOLATILE_IMMUNITY_ABILITIES = {
+    "oblivious": {"infatuation", "taunt", "intimidate"},
+    "own-tempo": {"confusion", "intimidate"},
 }
 
 STATUS_STAT_BOOST_ABILITIES = {
@@ -176,6 +188,8 @@ class DamageCalculator:
         return self.move_name in OHKO_MOVES
     def explosive_move(self):
         return self.move_name in EXPLOSIVE_MOVES
+    def force_switch_move(self):
+        return self.move_name in FORCE_SWITCH_MOVES
 
 
     # Weather and terrain effects. Weather and terrain can be set by abilities, moves, or items. They can also be blocked by abilities.
@@ -705,7 +719,6 @@ class DamageCalculator:
         return accuracy * 0.8
 
     # Volt Absorb: Electric moves don't affect the Pokémon. Instead they heal 1/4 of its max HP.
-    # Returns (move_power, hp_healed). hp_healed is a fraction of max HP.
     def volt_absorb_ability_attacker(self):
         if "volt-absorb" not in self.attacker.abilities or self.move_type != "electric":
             return self.move_power, 0
@@ -717,7 +730,6 @@ class DamageCalculator:
 
     # Water Absorb: Water moves don't affect the Pokémon. Instead they heal 1/4 of its max HP.
     # In extreme sun, damaging water moves evaporate before they land, so there's nothing to absorb.
-    # Returns (move_power, hp_healed). 
     def water_absorb_ability_attacker(self):
         if "water-absorb" not in self.attacker.abilities or self.move_type != "water":
             return self.move_power, 0
@@ -732,6 +744,159 @@ class DamageCalculator:
         return 0, 0.25
 
     # Static: needs a contact flag for each move, which the current move data doesn't have. Skipped for now.
+
+    # Oblivious: The Pokémon can't be infatuated or taunted, and Intimidate doesn't lower its Attack.
+    # incoming_effect = the effect a move or ability is trying to give ("infatuation", "taunt", "intimidate"). Returns True if Oblivious blocks it.
+    def oblivious_ability_attacker(self, incoming_effect):
+        if "oblivious" not in self.attacker.abilities:
+            return False
+        return incoming_effect in VOLATILE_IMMUNITY_ABILITIES["oblivious"]
+    def oblivious_ability_defender(self, incoming_effect):
+        if "oblivious" not in self.defender.abilities:
+            return False
+        return incoming_effect in VOLATILE_IMMUNITY_ABILITIES["oblivious"]
+
+
+    # Compound Eyes: The Pokémon's moves are 30% more accurate. One-hit KO moves don't get the boost.
+    # Returns the move's accuracy when this Pokémon uses it. None means the move never misses.
+    # It can go over 100. That's fine, it just means the move always hits. I believe the game uses the value 110 for always hit moves
+    def compound_eyes_ability_attacker(self):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if "compound-eyes" not in self.attacker.abilities or self.ohko_move():
+            return accuracy
+        return accuracy * 1.3
+    def compound_eyes_ability_defender(self):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if "compound-eyes" not in self.defender.abilities or self.ohko_move():
+            return accuracy
+        return accuracy * 1.3
+
+    # Insomnia: The Pokémon can't fall asleep. Returns the status that actually sticks.
+    # It also makes Rest fail and blocks Yawn's drowsiness. Will add those once Rest and Yawn are in.
+    def insomnia_ability_attacker(self):
+        if "insomnia" not in self.attacker.abilities:
+            return self.status_attacker
+        if self.status_attacker == STATUS_IMMUNITY_ABILITIES["insomnia"]:
+            return None
+        return self.status_attacker
+    def insomnia_ability_defender(self):
+        if "insomnia" not in self.defender.abilities:
+            return self.status_defender
+        if self.status_defender == STATUS_IMMUNITY_ABILITIES["insomnia"]:
+            return None
+        return self.status_defender
+
+    # Color Change: After a damaging move hits the Pokémon, its type changes to that move's type.
+    # Nothing happens if the move had no effect, the Pokémon fainted, or it already has that type.
+    # Call after the hit lands. Returns the Pokémon's types after the hit.
+    # The new type only lasts until it switches out, so don't save it to the database.
+    def color_change_ability_attacker(self, current_hp):
+        if "color-change" not in self.attacker.abilities:
+            return self.attacker.types
+        if not self.move_power or current_hp <= 0:
+            return self.attacker.types
+        if self.type_effectiveness_attacker() == 0 or self.move_type in self.attacker.types:
+            return self.attacker.types
+        return [self.move_type]
+    def color_change_ability_defender(self, current_hp):
+        if "color-change" not in self.defender.abilities:
+            return self.defender.types
+        if not self.move_power or current_hp <= 0:
+            return self.defender.types
+        if self.type_effectiveness_defender() == 0 or self.move_type in self.defender.types:
+            return self.defender.types
+        return [self.move_type]
+
+    # Immunity: The Pokémon can't be poisoned or badly poisoned. Returns the status that actually sticks.
+    def immunity_ability_attacker(self):
+        if "immunity" not in self.attacker.abilities:
+            return self.status_attacker
+        if self.status_attacker == "poison" or self.status_attacker == "badly-poison":
+            return None
+        return self.status_attacker
+    def immunity_ability_defender(self):
+        if "immunity" not in self.defender.abilities:
+            return self.status_defender
+        if self.status_defender == "poison" or self.status_defender == "badly-poison":
+            return None
+        return self.status_defender
+
+    # Flash Fire: Fire moves don't affect the Pokémon. Instead they turn on Flash Fire, which makes its own Fire moves do 1.5x dmg until it switches out.
+    # Works on Will-O-Wisp too. In heavy rain, damaging Fire moves fail before they land, so nothing turns on.
+    def flash_fire_ability_attacker(self):
+        if "flash-fire" not in self.attacker.abilities or self.move_type != "fire":
+            return self.move_power, False
+        if self.move_power and self.weather_move_power() == 0:
+            return 0, False
+        return 0, True
+    def flash_fire_ability_defender(self):
+        if "flash-fire" not in self.defender.abilities or self.move_type != "fire":
+            return self.move_power, False
+        if self.move_power and self.weather_move_power() == 0:
+            return 0, False
+        return 0, True
+
+    # Flash Fire boost: once Flash Fire is on, the Pokémon's Fire moves do 1.5x dmg.
+    # flash_fire_active = the activated value you saved from flash_fire_ability.
+    def flash_fire_boost_attacker(self, flash_fire_active):
+        if "flash-fire" not in self.attacker.abilities or not flash_fire_active:
+            return self.move_power
+        if not self.move_power or self.move_type != "fire":
+            return self.move_power
+        return self.move_power * 1.5
+    def flash_fire_boost_defender(self, flash_fire_active):
+        if "flash-fire" not in self.defender.abilities or not flash_fire_active:
+            return self.move_power
+        if not self.move_power or self.move_type != "fire":
+            return self.move_power
+        return self.move_power * 1.5
+
+    # Shield Dust: Blocks the extra effects of damaging moves used on this Pokémon, like Flamethrower's burn chance or Bite's flinch (Stench's flinch too).
+    # It doesn't block the main effect of status moves (Will-O-Wisp still burns) or effects on the user.
+    # Returns (ailment_chance, flinch_chance) as decimals, so roll them with: random.random() < chance
+    def shield_dust_ability_attacker(self):
+        ailment_chance = 0
+        if self.move_data.meta is not None:
+            ailment_chance = (self.move_data.meta.get("ailment_chance") or 0) / 100
+        flinch_chance = self.stench_ability_defender()
+        if "shield-dust" not in self.attacker.abilities or not self.move_power:
+            return ailment_chance, flinch_chance
+        return 0, 0
+    def shield_dust_ability_defender(self):
+        ailment_chance = 0
+        if self.move_data.meta is not None:
+            ailment_chance = (self.move_data.meta.get("ailment_chance") or 0) / 100
+        flinch_chance = self.stench_ability_attacker()
+        if "shield-dust" not in self.defender.abilities or not self.move_power:
+            return ailment_chance, flinch_chance
+        return 0, 0
+
+    # Own Tempo: The Pokémon can't be confused, and Intimidate doesn't lower its Attack.
+    # incoming_effect = the effect a move or ability is trying to give ("confusion", "intimidate"). 
+    def own_tempo_ability_attacker(self, incoming_effect):
+        if "own-tempo" not in self.attacker.abilities:
+            return False
+        return incoming_effect in VOLATILE_IMMUNITY_ABILITIES["own-tempo"]
+    def own_tempo_ability_defender(self, incoming_effect):
+        if "own-tempo" not in self.defender.abilities:
+            return False
+        return incoming_effect in VOLATILE_IMMUNITY_ABILITIES["own-tempo"]
+
+    # Suction Cups: The Pokémon can't be forced out by Roar, Whirlwind, Dragon Tail, or Circle Throw.
+    # Dragon Tail and Circle Throw still do their dmg, they just don't switch it out.
+    # Returns True if the move forces this Pokémon out. Red Card gets blocked too, will add it with the items.
+    def suction_cups_ability_attacker(self):
+        if not self.force_switch_move():
+            return False
+        return "suction-cups" not in self.attacker.abilities
+    def suction_cups_ability_defender(self):
+        if not self.force_switch_move():
+            return False
+        return "suction-cups" not in self.defender.abilities
 
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
