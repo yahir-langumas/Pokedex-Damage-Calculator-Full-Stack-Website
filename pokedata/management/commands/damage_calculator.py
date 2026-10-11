@@ -85,6 +85,61 @@ FORCE_SWITCH_MOVES = {
     "circle-throw", "dragon-tail", "roar", "whirlwind",
 }
 
+# Moves that make contact (Static, Rough Skin, Effect Spore, and Poison Point trigger on these).
+CONTACT_MOVES = {
+    "accelerock", "acrobatics", "aerial-ace", "anchor-shot", "aqua-jet",
+    "aqua-step", "aqua-tail", "arm-thrust", "assurance", "astonish", "avalanche",
+    "axe-kick", "behemoth-bash", "behemoth-blade", "bide", "bind", "bite",
+    "bitter-blade", "blaze-kick", "body-press", "body-slam", "bolt-beak",
+    "bolt-strike", "bounce", "branch-poke", "brave-bird", "breaking-swipe",
+    "brick-break", "brutal-swing", "bug-bite", "bullet-punch", "ceaseless-edge",
+    "chip-away", "circle-throw", "clamp", "close-combat", "collision-course",
+    "comet-punch", "comeuppance", "constrict", "counter", "covet", "crabhammer",
+    "cross-chop", "cross-poison", "crunch", "crush-claw", "crush-grip", "cut",
+    "darkest-lariat", "dig", "dire-claw", "dive", "dizzy-punch", "double-edge",
+    "double-hit", "double-iron-bash", "double-kick", "double-shock", "double-slap",
+    "dragon-ascent", "dragon-claw", "dragon-hammer", "dragon-rush", "dragon-tail",
+    "drain-punch", "draining-kiss", "drill-peck", "drill-run", "dual-chop",
+    "dual-wingbeat", "dynamic-punch", "electro-drift", "endeavor", "extreme-speed",
+    "facade", "fake-out", "false-surrender", "false-swipe", "feint-attack",
+    "fell-stinger", "fire-fang", "fire-lash", "fire-punch", "first-impression",
+    "fishious-rend", "flail", "flame-charge", "flame-wheel", "flare-blitz",
+    "flip-turn", "floaty-fall", "fly", "flying-press", "focus-punch", "force-palm",
+    "foul-play", "frustration", "fury-attack", "fury-cutter", "fury-swipes",
+    "gear-grind", "giga-impact", "glaive-rush", "grass-knot", "grassy-glide",
+    "guillotine", "gyro-ball", "hammer-arm", "hard-press", "head-charge",
+    "head-smash", "headbutt", "headlong-rush", "heart-stamp", "heat-crash",
+    "heavy-slam", "high-horsepower", "high-jump-kick", "hold-back", "horn-attack",
+    "horn-drill", "horn-leech", "hyper-drill", "hyper-fang", "ice-ball", "ice-fang",
+    "ice-hammer", "ice-punch", "ice-spinner", "infestation", "iron-head",
+    "iron-tail", "jaw-lock", "jet-punch", "jump-kick", "karate-chop", "knock-off",
+    "kowtow-cleave", "lash-out", "last-resort", "leaf-blade", "leech-life", "lick",
+    "liquidation", "low-kick", "low-sweep", "lunge", "mach-punch", "mega-kick",
+    "mega-punch", "megahorn", "metal-claw", "meteor-mash", "mighty-cleave",
+    "mortal-spin", "multi-attack", "needle-arm", "night-slash", "nuzzle", "outrage",
+    "payback", "peck", "petal-dance", "phantom-force", "plasma-fists", "play-rough",
+    "pluck", "poison-fang", "poison-jab", "poison-tail", "population-bomb",
+    "pounce", "pound", "power-trip", "power-up-punch", "power-whip", "psyblade",
+    "psychic-fangs", "psyshield-bash", "punishment", "pursuit", "quick-attack",
+    "rage", "rage-fist", "raging-bull", "rapid-spin", "razor-shell", "retaliate",
+    "return", "revenge", "reversal", "rock-climb", "rock-smash", "rolling-kick",
+    "rollout", "sacred-sword", "scratch", "seismic-toss", "shadow-claw",
+    "shadow-force", "shadow-punch", "shadow-sneak", "sizzly-slide", "skitter-smack",
+    "skull-bash", "sky-drop", "sky-uppercut", "slam", "slash", "smart-strike",
+    "smelling-salts", "snap-trap", "solar-blade", "spark", "spectral-thief",
+    "spin-out", "spirit-break", "steamroller", "steel-roller", "steel-wing",
+    "stomp", "stomping-tantrum", "stone-axe", "storm-throw", "strength", "struggle",
+    "submission", "sucker-punch", "sunsteel-strike", "super-fang", "supercell-slam",
+    "superpower", "surging-strikes", "tackle", "tail-slap", "take-down",
+    "temper-flare", "thief", "thrash", "throat-chop", "thunder-fang",
+    "thunder-punch", "thunderous-kick", "trailblaze", "triple-axel", "triple-dive",
+    "triple-kick", "trop-kick", "trump-card", "u-turn", "upper-hand", "v-create",
+    "veevee-volley", "vice-grip", "vine-whip", "vital-throw", "volt-tackle",
+    "wake-up-slap", "waterfall", "wave-crash", "wicked-blow", "wild-charge",
+    "wing-attack", "wood-hammer", "wrap", "wring-out", "x-scissor", "zen-headbutt",
+    "zing-zap", "zippy-zap",
+}
+
 # Critical hit chance by crit stage (Gen 7+). Stage 3 and up always crits.
 CRIT_CHANCE_BY_STAGE = {0: 1 / 24, 1: 1 / 8, 2: 1 / 2, 3: 1}
 
@@ -123,10 +178,11 @@ STATUS_IMMUNITY_ABILITIES = {
     "comatose": "all", "purifying-salt": "all",
 }
 
-# Effects that aren't major statuses but some abilities still block. Since Gen 8, Oblivious and Own Tempo also block Intimidate.
+# Effects that aren't major statuses but some abilities still block. Since Gen 8, Oblivious, Own Tempo, and Inner Focus also block Intimidate.
 VOLATILE_IMMUNITY_ABILITIES = {
     "oblivious": {"infatuation", "taunt", "intimidate"},
     "own-tempo": {"confusion", "intimidate"},
+    "inner-focus": {"flinch", "intimidate"},
 }
 
 STATUS_STAT_BOOST_ABILITIES = {
@@ -148,7 +204,7 @@ INTIMIDATE_IMMUNITY_ABILITIES = {
     "oblivious", "own-tempo", "scrappy", "white-smoke",
 }
 
-# Statuses Synchronize passes back. Sleep and freeze don't get passed.
+# Statuses Synchronize passes back to the other Pokémon.
 SYNCHRONIZE_STATUSES = {"burn", "paralysis", "poison", "badly-poison"}
 
 # Types that can't get certain statuses.
@@ -158,6 +214,17 @@ STATUS_IMMUNE_TYPES = {
     "poison": {"poison", "steel"},
     "badly-poison": {"poison", "steel"},
     "freeze": {"ice"},
+}
+
+# Abilities Trace can't copy.
+TRACE_BANNED_ABILITIES = {
+    "as-one-glastrier", "as-one-spectrier", "battle-bond", "comatose", "commander",
+    "disguise", "embody-aspect", "flower-gift", "forecast", "hunger-switch",
+    "ice-face", "illusion", "imposter", "multitype", "neutralizing-gas",
+    "poison-puppeteer", "power-construct", "power-of-alchemy", "protosynthesis",
+    "quark-drive", "receiver", "rks-system", "schooling", "shields-down",
+    "stance-change", "tera-shell", "tera-shift", "teraform-zero", "trace",
+    "zen-mode", "zero-to-hero",
 }
 
 
@@ -208,6 +275,8 @@ class DamageCalculator:
         return self.move_name in EXPLOSIVE_MOVES
     def force_switch_move(self):
         return self.move_name in FORCE_SWITCH_MOVES
+    def contact_move(self):
+        return self.move_name in CONTACT_MOVES
 
 
     # Weather and terrain effects. Weather and terrain can be set by abilities, moves, or items. They can also be blocked by abilities.
@@ -392,7 +461,8 @@ class DamageCalculator:
             return 1.5
         return 1
 
-    # Returns True if the Pokémon can't get incoming_status because of its type, ability, or the field.
+    # Types, abilities, and the field can stop a Pokémon from getting a status.
+    # incoming_status = the status a move or ability is trying to give. Returns True if it's blocked.
     def status_immune_attacker(self, incoming_status):
         for t in self.attacker.types:
             if t in STATUS_IMMUNE_TYPES.get(incoming_status, ()):
@@ -785,7 +855,23 @@ class DamageCalculator:
             return 0, 0
         return 0, 0.25
 
-    # Static: needs a contact flag for each move, which the current move data doesn't have. Skipped for now.
+    # Static: When the Pokémon is hit by a contact move, the attacker has a 30% chance of getting paralyzed. Returns the status that actually sticks.
+    def static_ability_attacker(self):
+        if "static" not in self.attacker.abilities or not self.contact_move():
+            return self.status_defender
+        if self.status_effects_defender() or self.status_immune_defender("paralysis"):
+            return self.status_defender
+        if random.random() < 0.30:
+            return "paralysis"
+        return self.status_defender
+    def static_ability_defender(self):
+        if "static" not in self.defender.abilities or not self.contact_move():
+            return self.status_attacker
+        if self.status_effects_attacker() or self.status_immune_attacker("paralysis"):
+            return self.status_attacker
+        if random.random() < 0.30:
+            return "paralysis"
+        return self.status_attacker
 
     # Oblivious: The Pokémon can't be infatuated or taunted, and Intimidate doesn't lower its Attack.
     # incoming_effect = the effect a move or ability is trying to give ("infatuation", "taunt", "intimidate"). Returns True if Oblivious blocks it.
@@ -934,8 +1020,7 @@ class DamageCalculator:
             return False
         return "suction-cups" not in self.defender.abilities
 
-    # Intimidate: When the Pokémon enters battle, it lowers the opposing Pokémon's Attack by 1 stage (2/3x).
-    # Call this when the Pokémon switches in. Returns the other Pokémon's Attack stat after Intimidate.
+    # Intimidate: When the Pokémon enters battle, it lowers the opposing Pokémon's Attack by 1 stage. Returns the opposing Pokémon's Attack stat.
     def intimidate_ability_attacker(self):
         if "intimidate" not in self.attacker.abilities:
             return self.defender.stats["attack"]
@@ -955,8 +1040,7 @@ class DamageCalculator:
             return self.attacker.stats["attack"] * 1.5
         return self.attacker.stats["attack"] * 2 / 3
 
-    # Shadow Tag: The opposing Pokémon can't switch out. Ghost types and other Shadow Tag Pokémon aren't trapped.
-    # Returns True if the other Pokémon is trapped. It doesn't trap on the turn it switches in.
+    # Shadow Tag: The opposing Pokémon can't switch out. Returns True if it's trapped.
     def shadow_tag_ability_attacker(self, switched_in_this_turn=False):
         if "shadow-tag" not in self.attacker.abilities or switched_in_this_turn:
             return False
@@ -970,12 +1054,58 @@ class DamageCalculator:
             return False
         return True
 
-    # Rough Skin: needs a contact flag for each move, which the current move data doesn't have. Skipped for now.
+    # Rough Skin: When the Pokémon is hit by a contact move, the attacker takes 1/8 of its max HP as dmg.
+    def rough_skin_ability_attacker(self):
+        if "rough-skin" not in self.attacker.abilities or not self.contact_move():
+            return 0
+        if "magic-guard" in self.defender.abilities:
+            return 0
+        return 0.125
+    def rough_skin_ability_defender(self):
+        if "rough-skin" not in self.defender.abilities or not self.contact_move():
+            return 0
+        if "magic-guard" in self.attacker.abilities:
+            return 0
+        return 0.125
 
-    # Effect Spore: needs a contact flag for each move, which the current move data doesn't have. Skipped for now.
+    # Effect Spore: When the Pokémon is hit by a contact move, the attacker has a 30% chance of getting poisoned, paralyzed, or put to sleep. Grass types are immune.
+    def effect_spore_ability_attacker(self):
+        if "effect-spore" not in self.attacker.abilities or not self.contact_move():
+            return self.status_defender
+        if "grass" in self.defender.types or "overcoat" in self.defender.abilities or self.status_effects_defender():
+            return self.status_defender
+        roll = random.random()
+        if roll < 0.11:
+            incoming_status = "sleep"
+        elif roll < 0.21:
+            incoming_status = "paralysis"
+        elif roll < 0.30:
+            incoming_status = "poison"
+        else:
+            return self.status_defender
+        if self.status_immune_defender(incoming_status):
+            return self.status_defender
+        return incoming_status
+    def effect_spore_ability_defender(self):
+        if "effect-spore" not in self.defender.abilities or not self.contact_move():
+            return self.status_attacker
+        if "grass" in self.attacker.types or "overcoat" in self.attacker.abilities or self.status_effects_attacker():
+            return self.status_attacker
+        roll = random.random()
+        if roll < 0.11:
+            incoming_status = "sleep"
+        elif roll < 0.21:
+            incoming_status = "paralysis"
+        elif roll < 0.30:
+            incoming_status = "poison"
+        else:
+            return self.status_attacker
+        if self.status_immune_attacker(incoming_status):
+            return self.status_attacker
+        return incoming_status
 
     # Synchronize: If another Pokémon burns, paralyzes, or poisons this Pokémon, that Pokémon gets the same status.
-    # incoming_status = the status this Pokémon just got. Returns the other Pokémon's status after.
+    # incoming_status = the status this Pokémon just got. Returns the status that actually sticks on the other Pokémon.
     def synchronize_ability_attacker(self, incoming_status):
         if "synchronize" not in self.attacker.abilities or incoming_status not in SYNCHRONIZE_STATUSES:
             return self.status_defender
@@ -989,7 +1119,7 @@ class DamageCalculator:
             return self.status_attacker
         return incoming_status
 
-    # Clear Body: Other Pokémon can't lower this Pokémon's stats. It can still lower its own (Close Combat, Overheat).
+    # Clear Body: Other Pokémon's moves and abilities can't lower this Pokémon's stats.
     # stage_change = how many stages the stat is changing. Returns the stage change that actually happens.
     def clear_body_ability_attacker(self, stage_change, from_opponent=True):
         if "clear-body" not in self.attacker.abilities:
@@ -1004,7 +1134,7 @@ class DamageCalculator:
             return 0
         return stage_change
 
-    # Natural Cure: The Pokémon's status is cured when it switches out. Returns the status after switching out.
+    # Natural Cure: The Pokémon's status is cured when it switches out.
     def natural_cure_ability_attacker(self):
         if "natural-cure" not in self.attacker.abilities:
             return self.status_attacker
@@ -1024,7 +1154,7 @@ class DamageCalculator:
             return self.move_power, 0
         return 0, 1
 
-    # Serene Grace: Doubles the chance of a move's extra effects, like Flamethrower's burn chance or Air Slash's flinch.
+    # Serene Grace: Doubles the chance of a move's extra effects happening.
     # Returns (ailment_chance, flinch_chance, stat_chance) as decimals, so roll them with: random.random() < chance
     def serene_grace_ability_attacker(self):
         ailment_chance = 0
@@ -1047,7 +1177,7 @@ class DamageCalculator:
             return ailment_chance, flinch_chance, stat_chance
         return min(ailment_chance * 2, 1), min(flinch_chance * 2, 1), min(stat_chance * 2, 1)
 
-    # Swift Swim: Doubles the Pokémon's Speed in rain. Utility Umbrella stops this, will add it with the items.
+    # Swift Swim: Doubles the Pokémon's Speed in rain.
     def swift_swim_ability_attacker(self):
         if "swift-swim" not in self.attacker.abilities:
             return self.attacker.stats["speed"]
@@ -1061,7 +1191,7 @@ class DamageCalculator:
             return self.defender.stats["speed"] * 2
         return self.defender.stats["speed"]
 
-    # Chlorophyll: Doubles the Pokémon's Speed in harsh sunlight. Utility Umbrella stops this, will add it with the items.
+    # Chlorophyll: Doubles the Pokémon's Speed in harsh sunlight.
     def chlorophyll_ability_attacker(self):
         if "chlorophyll" not in self.attacker.abilities:
             return self.attacker.stats["speed"]
@@ -1075,8 +1205,8 @@ class DamageCalculator:
             return self.defender.stats["speed"] * 2
         return self.defender.stats["speed"]
 
-    # Illuminate: The Pokémon's moves ignore the target's evasion stages, and other Pokémon can't lower its accuracy.
-    # Returns the move's accuracy after accuracy and evasion stages. None means the move never misses.
+    # Illuminate: The Pokémon's moves ignore the target's evasion changes, and its accuracy can't be lowered.
+    # Returns the move's accuracy when this Pokémon uses it. None means the move never misses.
     def illuminate_ability_attacker(self, accuracy_stage=0, target_evasion_stage=0):
         accuracy = self.move_data.accuracy
         if accuracy is None:
@@ -1098,7 +1228,7 @@ class DamageCalculator:
             return accuracy * (3 + stage) / 3
         return accuracy * 3 / (3 - stage)
 
-    # Illuminate also stops other Pokémon from lowering its accuracy. Returns the stage change that actually happens.
+    # Illuminate: Other Pokémon can't lower this Pokémon's accuracy. Returns the stage change that actually happens.
     def illuminate_accuracy_drop_attacker(self, stage_change, from_opponent=True):
         if "illuminate" not in self.attacker.abilities:
             return stage_change
@@ -1111,6 +1241,65 @@ class DamageCalculator:
         if stage_change < 0 and from_opponent:
             return 0
         return stage_change
+
+    # Trace: When the Pokémon enters battle, it copies the opposing Pokémon's ability. Returns the Pokémon's abilities after Trace.
+    def trace_ability_attacker(self):
+        if "trace" not in self.attacker.abilities:
+            return self.attacker.abilities
+        copied = [ability for ability in self.defender.abilities if ability not in TRACE_BANNED_ABILITIES]
+        if not copied:
+            return self.attacker.abilities
+        return copied
+    def trace_ability_defender(self):
+        if "trace" not in self.defender.abilities:
+            return self.defender.abilities
+        copied = [ability for ability in self.attacker.abilities if ability not in TRACE_BANNED_ABILITIES]
+        if not copied:
+            return self.defender.abilities
+        return copied
+
+    # Poison Point: When the Pokémon is hit by a contact move, the attacker has a 30% chance of getting poisoned. Returns the status that actually sticks.
+    def poison_point_ability_attacker(self):
+        if "poison-point" not in self.attacker.abilities or not self.contact_move():
+            return self.status_defender
+        if self.status_effects_defender() or self.status_immune_defender("poison"):
+            return self.status_defender
+        if random.random() < 0.30:
+            return "poison"
+        return self.status_defender
+    def poison_point_ability_defender(self):
+        if "poison-point" not in self.defender.abilities or not self.contact_move():
+            return self.status_attacker
+        if self.status_effects_attacker() or self.status_immune_attacker("poison"):
+            return self.status_attacker
+        if random.random() < 0.30:
+            return "poison"
+        return self.status_attacker
+
+    # Inner Focus: The Pokémon can't flinch, and Intimidate doesn't lower its Attack.
+    # incoming_effect = the effect a move or ability is trying to give ("flinch", "intimidate"). Returns True if Inner Focus blocks it.
+    def inner_focus_ability_attacker(self, incoming_effect):
+        if "inner-focus" not in self.attacker.abilities:
+            return False
+        return incoming_effect in VOLATILE_IMMUNITY_ABILITIES["inner-focus"]
+    def inner_focus_ability_defender(self, incoming_effect):
+        if "inner-focus" not in self.defender.abilities:
+            return False
+        return incoming_effect in VOLATILE_IMMUNITY_ABILITIES["inner-focus"]
+
+    # Magma Armor: The Pokémon can't be frozen. Returns the status that actually sticks.
+    def magma_armor_ability_attacker(self):
+        if "magma-armor" not in self.attacker.abilities:
+            return self.status_attacker
+        if self.status_attacker == STATUS_IMMUNITY_ABILITIES["magma-armor"]:
+            return None
+        return self.status_attacker
+    def magma_armor_ability_defender(self):
+        if "magma-armor" not in self.defender.abilities:
+            return self.status_defender
+        if self.status_defender == STATUS_IMMUNITY_ABILITIES["magma-armor"]:
+            return None
+        return self.status_defender
 
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
