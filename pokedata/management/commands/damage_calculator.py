@@ -1301,6 +1301,82 @@ class DamageCalculator:
             return None
         return self.status_defender
 
+    # Water Veil: The Pokémon can't be burned. Returns the status that actually sticks.
+    def water_veil_ability_attacker(self):
+        if "water-veil" not in self.attacker.abilities:
+            return self.status_attacker
+        if self.status_attacker == STATUS_IMMUNITY_ABILITIES["water-veil"]:
+            return None
+        return self.status_attacker
+    def water_veil_ability_defender(self):
+        if "water-veil" not in self.defender.abilities:
+            return self.status_defender
+        if self.status_defender == STATUS_IMMUNITY_ABILITIES["water-veil"]:
+            return None
+        return self.status_defender
+
+    # Magnet Pull: Opposing Steel types can't switch out. Returns True if it's trapped.
+    def magnet_pull_ability_attacker(self, switched_in_this_turn=False):
+        if "magnet-pull" not in self.attacker.abilities or switched_in_this_turn:
+            return False
+        if "steel" not in self.defender.types or "ghost" in self.defender.types:
+            return False
+        return True
+    def magnet_pull_ability_defender(self, switched_in_this_turn=False):
+        if "magnet-pull" not in self.defender.abilities or switched_in_this_turn:
+            return False
+        if "steel" not in self.attacker.types or "ghost" in self.attacker.types:
+            return False
+        return True
+
+    # Soundproof: The Pokémon is immune to sound-based moves.
+    def soundproof_ability_attacker(self):
+        if "soundproof" not in self.attacker.abilities:
+            return self.move_power
+        if self.sound_move():
+            return 0
+        else:
+            return self.move_power
+    def soundproof_ability_defender(self):
+        if "soundproof" not in self.defender.abilities:
+            return self.move_power
+        if self.sound_move():
+            return 0
+        else:
+            return self.move_power
+
+    # Rain Dish: Heals 1/16 of the Pokémon's max HP at the end of each turn in rain.
+    def rain_dish_ability_attacker(self):
+        if "rain-dish" not in self.attacker.abilities:
+            return 0
+        if self.current_weather() in ("rain", "heavy-rain"):
+            return 0.0625
+        return 0
+    def rain_dish_ability_defender(self):
+        if "rain-dish" not in self.defender.abilities:
+            return 0
+        if self.current_weather() in ("rain", "heavy-rain"):
+            return 0.0625
+        return 0
+
+    # Sand Stream: Summons a sandstorm for 5 turns when the Pokémon enters battle.
+    def sand_stream_ability_attacker(self):
+        if "sand-stream" not in self.attacker.abilities:
+            return self.weather
+        if WEATHER_EFFECTS.get(self.weather, {}).get("primal"):
+            return self.weather
+        self.weather = "sandstorm"
+        self.weather_turns = WEATHER_EFFECTS["sandstorm"]["turns"]
+        return self.weather
+    def sand_stream_ability_defender(self):
+        if "sand-stream" not in self.defender.abilities:
+            return self.weather
+        if WEATHER_EFFECTS.get(self.weather, {}).get("primal"):
+            return self.weather
+        self.weather = "sandstorm"
+        self.weather_turns = WEATHER_EFFECTS["sandstorm"]["turns"]
+        return self.weather
+
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
     # Will add after finishing abilities 
