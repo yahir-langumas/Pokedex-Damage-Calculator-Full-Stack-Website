@@ -1377,6 +1377,117 @@ class DamageCalculator:
         self.weather_turns = WEATHER_EFFECTS["sandstorm"]["turns"]
         return self.weather
 
+    # Pressure: Moves used against the Pokémon use 1 extra PP. Returns how much PP the move uses.
+    def pressure_ability_attacker(self):
+        if "pressure" not in self.attacker.abilities:
+            return 1
+        return 2
+    def pressure_ability_defender(self):
+        if "pressure" not in self.defender.abilities:
+            return 1
+        return 2
+
+    # Early Bird: The Pokémon wakes up from sleep twice as fast.
+    # sleep_turns = how many turns it would normally sleep. Returns how many turns it actually sleeps.
+    def early_bird_ability_attacker(self, sleep_turns):
+        if "early-bird" not in self.attacker.abilities:
+            return sleep_turns
+        return sleep_turns // 2
+    def early_bird_ability_defender(self, sleep_turns):
+        if "early-bird" not in self.defender.abilities:
+            return sleep_turns
+        return sleep_turns // 2
+
+    # Flame Body: When the Pokémon is hit by a contact move, the attacker has a 30% chance of getting burned. Returns the status that actually sticks.
+    def flame_body_ability_attacker(self):
+        if "flame-body" not in self.attacker.abilities or not self.contact_move():
+            return self.status_defender
+        if self.status_effects_defender() or self.status_immune_defender("burn"):
+            return self.status_defender
+        if random.random() < 0.30:
+            return "burn"
+        return self.status_defender
+    def flame_body_ability_defender(self):
+        if "flame-body" not in self.defender.abilities or not self.contact_move():
+            return self.status_attacker
+        if self.status_effects_attacker() or self.status_immune_attacker("burn"):
+            return self.status_attacker
+        if random.random() < 0.30:
+            return "burn"
+        return self.status_attacker
+
+    # Run Away: The Pokémon can always flee from wild battles, even when it's trapped. Returns True if it can flee.
+    def run_away_ability_attacker(self, trapped=False):
+        if "run-away" in self.attacker.abilities:
+            return True
+        return not trapped
+    def run_away_ability_defender(self, trapped=False):
+        if "run-away" in self.defender.abilities:
+            return True
+        return not trapped
+
+    # Keen Eye: The Pokémon's moves ignore the target's evasion changes, and its accuracy can't be lowered.
+    # Returns the move's accuracy when this Pokémon uses it. None means the move never misses.
+    def keen_eye_ability_attacker(self, accuracy_stage=0, target_evasion_stage=0):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if "keen-eye" in self.attacker.abilities:
+            target_evasion_stage = 0
+        stage = max(-6, min(6, accuracy_stage - target_evasion_stage))
+        if stage >= 0:
+            return accuracy * (3 + stage) / 3
+        return accuracy * 3 / (3 - stage)
+    def keen_eye_ability_defender(self, accuracy_stage=0, target_evasion_stage=0):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if "keen-eye" in self.defender.abilities:
+            target_evasion_stage = 0
+        stage = max(-6, min(6, accuracy_stage - target_evasion_stage))
+        if stage >= 0:
+            return accuracy * (3 + stage) / 3
+        return accuracy * 3 / (3 - stage)
+
+    # Keen Eye: Other Pokémon can't lower this Pokémon's accuracy. Returns the stage change that actually happens.
+    def keen_eye_accuracy_drop_attacker(self, stage_change, from_opponent=True):
+        if "keen-eye" not in self.attacker.abilities:
+            return stage_change
+        if stage_change < 0 and from_opponent:
+            return 0
+        return stage_change
+    def keen_eye_accuracy_drop_defender(self, stage_change, from_opponent=True):
+        if "keen-eye" not in self.defender.abilities:
+            return stage_change
+        if stage_change < 0 and from_opponent:
+            return 0
+        return stage_change
+
+    # Hyper Cutter: Other Pokémon's moves and abilities can't lower this Pokémon's Attack.
+    # stat = the stat that's changing. Returns the stage change that actually happens.
+    def hyper_cutter_ability_attacker(self, stat, stage_change, from_opponent=True):
+        if "hyper-cutter" not in self.attacker.abilities:
+            return stage_change
+        if stat == "attack" and stage_change < 0 and from_opponent:
+            return 0
+        return stage_change
+    def hyper_cutter_ability_defender(self, stat, stage_change, from_opponent=True):
+        if "hyper-cutter" not in self.defender.abilities:
+            return stage_change
+        if stat == "attack" and stage_change < 0 and from_opponent:
+            return 0
+        return stage_change
+
+    # Pickup: If the Pokémon isn't holding an item, it picks up the item the other Pokémon used up this turn. Returns the item it's holding after.
+    def pickup_ability_attacker(self, held_item, used_item):
+        if "pickup" not in self.attacker.abilities or held_item:
+            return held_item
+        return used_item
+    def pickup_ability_defender(self, held_item, used_item):
+        if "pickup" not in self.defender.abilities or held_item:
+            return held_item
+        return used_item
+
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
     # Will add after finishing abilities 
