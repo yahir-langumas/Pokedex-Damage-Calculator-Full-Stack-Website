@@ -10,7 +10,7 @@ import random
 SOUND_MOVES = {
     "alluring-voice", "boomburst", "bug-buzz", "chatter", "clanging-scales",
     "clangorous-soul", "clangorous-soulblaze", "confide", "disarming-voice",
-    "dragon-cheer", "echoed-voice", "eerie-spell", "grass-whistle", "growl",
+    "echoed-voice", "eerie-spell", "grass-whistle", "growl",
     "heal-bell", "howl", "hyper-voice", "metal-sound", "noble-roar",
     "overdrive", "parting-shot", "perish-song", "psychic-noise", "relic-song",
     "roar", "round", "screech", "sing", "snarl", "snore", "sparkling-aria",
@@ -19,11 +19,10 @@ SOUND_MOVES = {
 
 SLICING_MOVES = {
     "aerial-ace", "air-cutter", "air-slash", "aqua-cutter", "behemoth-blade",
-    "bitter-blade", "ceaseless-edge", "cross-poison", "crush-claw", "cut",
-    "dire-claw", "dragon-claw", "fury-cutter", "kowtow-cleave", "leaf-blade",
-    "mighty-cleave", "night-slash", "population-bomb", "psyblade", "psycho-cut",
-    "razor-leaf", "razor-shell", "sacred-sword", "secret-sword", "shadow-claw",
-    "slash", "solar-blade", "stone-axe", "tachyon-cutter", "x-scissor",
+    "bitter-blade", "ceaseless-edge", "cross-poison", "cut", "fury-cutter",
+    "kowtow-cleave", "leaf-blade", "mighty-cleave", "night-slash", "population-bomb",
+    "psyblade", "psycho-cut", "razor-leaf", "razor-shell", "sacred-sword",
+    "secret-sword", "slash", "solar-blade", "stone-axe", "tachyon-cutter", "x-scissor",
 }
 
 CLAW_MOVES = {
@@ -36,7 +35,7 @@ BITING_MOVES = {
     "ice-fang", "jaw-lock", "poison-fang", "psychic-fangs", "thunder-fang",
 }
 PUNCHING_MOVES = {
-    "bullet-punch", "comet-punch", "dizzy-punch", "double-iron-bash", "double-shock",
+    "bullet-punch", "comet-punch", "dizzy-punch", "double-iron-bash",
     "drain-punch", "dynamic-punch", "fire-punch", "focus-punch", "hammer-arm",
     "headlong-rush", "ice-hammer", "ice-punch", "jet-punch", "mach-punch",
     "mega-punch", "meteor-mash", "plasma-fists", "power-up-punch", "rage-fist",
@@ -83,6 +82,12 @@ EXPLOSIVE_MOVES = {
 # Red Card does this too, but it's an item, so it'll go in with the items.
 FORCE_SWITCH_MOVES = {
     "circle-throw", "dragon-tail", "roar", "whirlwind",
+}
+
+# Moves that take or destroy the target's held item (Sticky Hold stops these).
+ITEM_REMOVING_MOVES = {
+    "bug-bite", "corrosive-gas", "covet", "incinerate", "knock-off",
+    "pluck", "switcheroo", "thief", "trick",
 }
 
 # Moves that make contact (Static, Rough Skin, Effect Spore, and Poison Point trigger on these).
@@ -229,7 +234,8 @@ TRACE_BANNED_ABILITIES = {
 
 
 class DamageCalculator:
-    def __init__(self, attacker: Species, defender: Species, move_type: str, move_power: int, move_name: str, status_effect_attacker: str, status_effect_defender: str, weather: str = None, terrain: str = None):
+    # attacker_ability and defender_ability = the ability each Pokémon is using. If it's not given, it uses the Pokémon's first ability.
+    def __init__(self, attacker: Species, defender: Species, move_type: str, move_power: int, move_name: str, status_effect_attacker: str, status_effect_defender: str, weather: str = None, terrain: str = None, attacker_ability: str = None, defender_ability: str = None):
         self.attacker = attacker
         self.defender = defender
         self.move_type = move_type
@@ -246,6 +252,8 @@ class DamageCalculator:
         self.terrain = terrain 
         self.weather_turns = WEATHER_EFFECTS[weather]["turns"] if weather in WEATHER_EFFECTS else 0 # None -> primal weather, never runs out on its own
         self.terrain_turns = TERRAIN_EFFECTS[terrain]["turns"] if terrain in TERRAIN_EFFECTS else 0
+        self.attacker_abilities = [attacker_ability or self.attacker.abilities[0]]
+        self.defender_abilities = [defender_ability or self.defender.abilities[0]]
 
     def status_effects_attacker(self):
         return self.status_attacker in STATUS_EFFECTS
@@ -277,12 +285,16 @@ class DamageCalculator:
         return self.move_name in FORCE_SWITCH_MOVES
     def contact_move(self):
         return self.move_name in CONTACT_MOVES
+    def item_removing_move(self):
+        return self.move_name in ITEM_REMOVING_MOVES
+    def status_move(self):
+        return self.move_data.damage_class == "status"
 
 
     # Weather and terrain effects. Weather and terrain can be set by abilities, moves, or items. They can also be blocked by abilities.
     def current_weather(self):
-        for pokemon in (self.attacker, self.defender):
-            if "cloud-nine" in pokemon.abilities or "air-lock" in pokemon.abilities:
+        for abilities in (self.attacker_abilities, self.defender_abilities):
+            if "cloud-nine" in abilities or "air-lock" in abilities:
                 return None
         return self.weather
     
@@ -295,9 +307,9 @@ class DamageCalculator:
     # A Pokémon is grounded unless it is a Flying type or has Levitate. Terrain only affects grounded Pokémon.
     # Will add Air Balloon, Magnet Rise, and Gravity later once items and field moves are in.
     def grounded_attacker(self):
-        return "flying" not in self.attacker.types and "levitate" not in self.attacker.abilities
+        return "flying" not in self.attacker.types and "levitate" not in self.attacker_abilities
     def grounded_defender(self):
-        return "flying" not in self.defender.types and "levitate" not in self.defender.abilities
+        return "flying" not in self.defender.types and "levitate" not in self.defender_abilities
 
     # Rain, sun, and their primal versions boost or weaken moves of certain types.
     def weather_move_power(self):
@@ -333,7 +345,7 @@ class DamageCalculator:
         for t in self.attacker.types:
             if t in effects["immune_types"]:
                 return 0
-        for ability in self.attacker.abilities:
+        for ability in self.attacker_abilities:
             if ability in effects["immune_abilities"]:
                 return 0
         return effects["self_inflicted_dmg"]
@@ -344,7 +356,7 @@ class DamageCalculator:
         for t in self.defender.types:
             if t in effects["immune_types"]:
                 return 0
-        for ability in self.defender.abilities:
+        for ability in self.defender_abilities:
             if ability in effects["immune_abilities"]:
                 return 0
         return effects["self_inflicted_dmg"]
@@ -451,7 +463,7 @@ class DamageCalculator:
     # Rolls for a critical hit. Returns the damage multiplier: 1.5 on a crit, 1 otherwise.
     # High-crit moves (Slash, Stone Edge, etc.) store their crit stage in meta["crit_rate"].
     def critical_hit_roll(self):
-        if not self.move_power:
+        if self.status_move():
             return 1
         crit_stage = 0
         if self.move_data.meta is not None:
@@ -467,7 +479,7 @@ class DamageCalculator:
         for t in self.attacker.types:
             if t in STATUS_IMMUNE_TYPES.get(incoming_status, ()):
                 return True
-        for ability in self.attacker.abilities:
+        for ability in self.attacker_abilities:
             blocked = STATUS_IMMUNITY_ABILITIES.get(ability)
             if blocked == "all" or blocked == incoming_status:
                 return True
@@ -478,7 +490,7 @@ class DamageCalculator:
         for t in self.defender.types:
             if t in STATUS_IMMUNE_TYPES.get(incoming_status, ()):
                 return True
-        for ability in self.defender.abilities:
+        for ability in self.defender_abilities:
             blocked = STATUS_IMMUNITY_ABILITIES.get(ability)
             if blocked == "all" or blocked == incoming_status:
                 return True
@@ -490,14 +502,14 @@ class DamageCalculator:
 
     # Guts boosts the bearer's Attack stat by 50% when it has a major status condition.
     def guts_ability_attacker(self):
-        if "guts" not in self.attacker.abilities:
+        if "guts" not in self.attacker_abilities:
             return self.attacker.stats["attack"]
         if self.status_effects_attacker():
             return self.attacker.stats["attack"] * 1.5
         else:
             return self.attacker.stats["attack"]
     def guts_ability_defender(self):
-        if "guts" not in self.defender.abilities:
+        if "guts" not in self.defender_abilities:
                 return self.defender.stats["attack"]
         if self.status_effects_defender():
             return self.defender.stats["attack"] * 1.5
@@ -506,14 +518,14 @@ class DamageCalculator:
 
     # Toxic boost increases the Pokémon's physical Attack stat by 1.5× when it is poisoned
     def toxic_boost_ability_attacker(self):
-        if "toxic-boost" not in self.attacker.abilities:
+        if "toxic-boost" not in self.attacker_abilities:
             return self.attacker.stats["attack"]
         if self.status_attacker == "poison" or self.status_attacker == "badly-poison":
             return self.attacker.stats["attack"] * 1.5
         else:
             return self.attacker.stats["attack"]
     def toxic_boost_ability_defender(self):
-        if "toxic-boost" not in self.defender.abilities:
+        if "toxic-boost" not in self.defender_abilities:
            return self.defender.stats["attack"]
         if self.status_defender == "poison" or self.status_defender == "badly-poison":
             return self.defender.stats["attack"] * 1.5
@@ -522,14 +534,14 @@ class DamageCalculator:
 
     # Flare boost multiplies the user's Special Attack stat by 1.5× when the Pokémon is burned
     def flare_boost_ability_attacker(self):
-        if "flare-boost" not in self.attacker.abilities:
+        if "flare-boost" not in self.attacker_abilities:
             return self.attacker.stats["special-attack"]
         if self.status_attacker == "burn":
             return self.attacker.stats["special-attack"] * 1.5
         else:
             return self.attacker.stats["special-attack"]
     def flare_boost_ability_defender(self):
-        if "flare-boost" not in self.defender.abilities:
+        if "flare-boost" not in self.defender_abilities:
             return self.defender.stats["special-attack"]
         if self.status_defender == "burn":
             return self.defender.stats["special-attack"] * 1.5
@@ -538,14 +550,14 @@ class DamageCalculator:
 
     # Quick feet increases a Pokémon's Speed stat by 50% when it is affected by a major status ailment like poison, burn, paralysis, freeze, or sleep
     def quick_feet_ability_attacker(self):
-        if "quick-feet" not in self.attacker.abilities:
+        if "quick-feet" not in self.attacker_abilities:
             return self.attacker.stats["speed"]
         if self.status_effects_attacker():
             return self.attacker.stats["speed"] * 1.5
         else:
             return self.attacker.stats["speed"]
     def quick_feet_ability_defender(self):
-        if "quick-feet" not in self.defender.abilities:
+        if "quick-feet" not in self.defender_abilities:
             return self.defender.stats["speed"]
         if self.status_effects_defender():
             return self.defender.stats["speed"] * 1.5
@@ -554,14 +566,14 @@ class DamageCalculator:
 
     # Marvel scale boosts the user's Defense stat by 50% (1.5×) whenever it is afflicted with a major status condition(poison, burn, paralysis, freeze, or sleep).
     def marvel_scale_ability_attacker(self):
-        if "marvel-scale" not in self.attacker.abilities:
+        if "marvel-scale" not in self.attacker_abilities:
             return self.attacker.stats["defense"]
         if self.status_effects_attacker():
             return self.attacker.stats["defense"] * 1.5
         else:
             return self.attacker.stats["defense"]
     def marvel_scale_ability_defender(self):
-        if "marvel-scale" not in self.defender.abilities:
+        if "marvel-scale" not in self.defender_abilities:
             return self.defender.stats["defense"]
         if self.status_effects_defender():
             return self.defender.stats["defense"] * 1.5
@@ -571,11 +583,11 @@ class DamageCalculator:
 
     # Pure Power doubles the user's total physical Attack stat in battle.
     def pure_power_ability_attacker(self):
-        if "pure-power" not in self.attacker.abilities:
+        if "pure-power" not in self.attacker_abilities:
            return self.attacker.stats["attack"]
         return self.attacker.stats["attack"] * 2
     def pure_power_ability_defender(self):
-        if "pure-power" not in self.defender.abilities:
+        if "pure-power" not in self.defender_abilities:
            return self.defender.stats["attack"]
         return self.defender.stats["attack"] * 2
 
@@ -584,14 +596,14 @@ class DamageCalculator:
         if self.move_data.meta is None:
             return 0
         drain = self.move_data.meta.get("drain", 0)
-        if "rock-head" in self.attacker.abilities and drain < 0:
+        if "rock-head" in self.attacker_abilities and drain < 0:
             return 0
         return drain
     def rock_head_ability_defender(self):
         if self.move_data.meta is None:
             return 0
         drain = self.move_data.meta.get("drain", 0)
-        if "rock-head" in self.defender.abilities and drain < 0:
+        if "rock-head" in self.defender_abilities and drain < 0:
             return 0
         return drain
         # Will add more logic to remove special effects of moves like recoil damage, stat changes, and status effects later.
@@ -599,17 +611,17 @@ class DamageCalculator:
     # Levitate is an ability that gives a Pokémon full immunity to Ground-type moves, Spikes, Toxic Spikes, and the Arena Trap ability.
     # Levitate also means the Pokémon isn't grounded, so terrain doesn't affect it (handled in grounded_attacker / grounded_defender).
     def levitate_ability_attacker(self):
-        if "levitate" not in self.attacker.abilities:
+        if "levitate" not in self.attacker_abilities:
             return self.move_power
-        if self.move_type  == "ground":
-            return self.move_power * 0
+        if self.move_type == "ground" and not self.status_move():
+            return 0
         else:
             return self.move_power
     def levitate_ability_defender(self):
-        if "levitate" not in self.defender.abilities:
+        if "levitate" not in self.defender_abilities:
             return self.move_power
-        if self.move_type  == "ground":
-            return self.move_power * 0
+        if self.move_type == "ground" and not self.status_move():
+            return 0
         else:
             return self.move_power
         # Will add more logic later for the other effects of levitate like spikes, toxic spikes, and arena trap.
@@ -617,55 +629,55 @@ class DamageCalculator:
     # Makes the user immune to all direct damaging moves unless they are super-effective
     # Strong winds can turn a super-effective hit into a neutral one, so this uses type_effectiveness.
     def wonder_guard_ability_attacker(self):
-        if "wonder-guard" not in self.attacker.abilities:
+        if "wonder-guard" not in self.attacker_abilities or self.status_move():
             return self.move_power
         if self.type_effectiveness_attacker() > 1:
             return self.move_power
-        return self.move_power * 0
+        return 0
     def wonder_guard_ability_defender(self):
-        if "wonder-guard" not in self.defender.abilities:
+        if "wonder-guard" not in self.defender_abilities or self.status_move():
             return self.move_power
         if self.type_effectiveness_defender() > 1:
             return self.move_power
-        return self.move_power * 0
+        return 0
 
     # Huge Power is a powerful Pokémon ability that doubles the user's actual Attack stat during battle
     def huge_power_ability_attacker(self):
-        if "huge-power" not in self.attacker.abilities:
+        if "huge-power" not in self.attacker_abilities:
             return self.attacker.stats["attack"]
         return self.attacker.stats["attack"] * 2
     def huge_power_ability_defender(self):
-        if "huge-power" not in self.defender.abilities:
+        if "huge-power" not in self.defender_abilities:
             return self.defender.stats["attack"]
         return self.defender.stats["attack"] * 2
         # Will add more logic around IV and EV later to make it more accurate.
 
     # Bulletproof: The Pokémon is immune to ball and bomb moves.
     def bulletproof_ability_attacker(self):
-        if "bulletproof" not in self.attacker.abilities:
+        if "bulletproof" not in self.attacker_abilities:
             return self.move_power
         if self.ball_and_bomb_move():
-            return self.move_power * 0
+            return 0
         else:
             return self.move_power
     def bulletproof_ability_defender(self):
-        if "bulletproof" not in self.defender.abilities:
+        if "bulletproof" not in self.defender_abilities:
             return self.move_power
         if self.ball_and_bomb_move():
-            return self.move_power * 0
+            return 0
         else:
             return self.move_power
 
     # Thick Fat: Halves the damage taken from Fire and Ice type moves.
     def thick_fat_ability_attacker(self):
-        if "thick-fat" not in self.attacker.abilities:
+        if "thick-fat" not in self.attacker_abilities or not self.move_power:
             return self.move_power
         if self.move_type == "fire" or self.move_type == "ice":
             return self.move_power * 0.5
         else:
             return self.move_power
     def thick_fat_ability_defender(self):
-        if "thick-fat" not in self.defender.abilities:
+        if "thick-fat" not in self.defender_abilities or not self.move_power:
             return self.move_power
         if self.move_type == "fire" or self.move_type == "ice":
             return self.move_power * 0.5
@@ -675,13 +687,13 @@ class DamageCalculator:
     # Filter: Reduces the damage taken from super-effective moves to 75%.
     # Strong winds can turn a super-effective hit into a neutral one, so this uses type_effectiveness.
     def filter_ability_attacker(self):
-        if "filter" not in self.attacker.abilities:
+        if "filter" not in self.attacker_abilities or not self.move_power:
             return self.move_power
         if self.type_effectiveness_attacker() > 1:
             return self.move_power * 0.75
         return self.move_power
     def filter_ability_defender(self):
-        if "filter" not in self.defender.abilities:
+        if "filter" not in self.defender_abilities or not self.move_power:
             return self.move_power
         if self.type_effectiveness_defender() > 1:
             return self.move_power * 0.75
@@ -689,13 +701,13 @@ class DamageCalculator:
 
     # Solid Rock: Same as Filter. Reduces the damage taken from super-effective moves to 75%.
     def solid_rock_ability_attacker(self):
-        if "solid-rock" not in self.attacker.abilities:
+        if "solid-rock" not in self.attacker_abilities or not self.move_power:
             return self.move_power
         if self.type_effectiveness_attacker() > 1:
             return self.move_power * 0.75
         return self.move_power
     def solid_rock_ability_defender(self):
-        if "solid-rock" not in self.defender.abilities:
+        if "solid-rock" not in self.defender_abilities or not self.move_power:
             return self.move_power
         if self.type_effectiveness_defender() > 1:
             return self.move_power * 0.75
@@ -708,18 +720,18 @@ class DamageCalculator:
         move_flinch_chance = 0
         if self.move_data.meta is not None:
             move_flinch_chance = (self.move_data.meta.get("flinch_chance") or 0) / 100
-        if "stench" not in self.attacker.abilities:
+        if "stench" not in self.attacker_abilities:
             return move_flinch_chance
-        if not self.move_power or move_flinch_chance > 0:
+        if self.status_move() or move_flinch_chance > 0:
             return move_flinch_chance
         return 0.10
     def stench_ability_defender(self):
         move_flinch_chance = 0
         if self.move_data.meta is not None:
             move_flinch_chance = (self.move_data.meta.get("flinch_chance") or 0) / 100
-        if "stench" not in self.defender.abilities:
+        if "stench" not in self.defender_abilities:
             return move_flinch_chance
-        if not self.move_power or move_flinch_chance > 0:
+        if self.status_move() or move_flinch_chance > 0:
             return move_flinch_chance
         return 0.10
 
@@ -727,17 +739,17 @@ class DamageCalculator:
     # It can't replace primal weather (heavy rain, extreme sun, strong winds).
     # Call this when the Pokémon switches in, then use weather_move_power() for the damage change.
     def drizzle_ability_attacker(self):
-        if "drizzle" not in self.attacker.abilities:
+        if "drizzle" not in self.attacker_abilities:
             return self.weather
-        if WEATHER_EFFECTS.get(self.weather, {}).get("primal"):
+        if self.weather == "rain" or WEATHER_EFFECTS.get(self.weather, {}).get("primal"):
             return self.weather
         self.weather = "rain"
         self.weather_turns = WEATHER_EFFECTS["rain"]["turns"]
         return self.weather
     def drizzle_ability_defender(self):
-        if "drizzle" not in self.defender.abilities:
+        if "drizzle" not in self.defender_abilities:
             return self.weather
-        if WEATHER_EFFECTS.get(self.weather, {}).get("primal"):
+        if self.weather == "rain" or WEATHER_EFFECTS.get(self.weather, {}).get("primal"):
             return self.weather
         self.weather = "rain"
         self.weather_turns = WEATHER_EFFECTS["rain"]["turns"]
@@ -748,12 +760,12 @@ class DamageCalculator:
     # Don't count the turn it switched in (a lead that started the battle does count turn 1).
     # Each stage is +50% of the base stat: +1 = 1.5x, +2 = 2x, ... +6 = 4x.
     def speed_boost_ability_attacker(self, turns_on_field):
-        if "speed-boost" not in self.attacker.abilities:
+        if "speed-boost" not in self.attacker_abilities:
             return self.attacker.stats["speed"]
         stage = min(turns_on_field, 6)
         return self.attacker.stats["speed"] * (2 + stage) / 2
     def speed_boost_ability_defender(self, turns_on_field):
-        if "speed-boost" not in self.defender.abilities:
+        if "speed-boost" not in self.defender_abilities:
             return self.defender.stats["speed"]
         stage = min(turns_on_field, 6)
         return self.defender.stats["speed"] * (2 + stage) / 2
@@ -761,18 +773,18 @@ class DamageCalculator:
     # Battle Armor: Attacks landed on the Pokémon will never be critical hits.
     # Returns the crit multiplier to plug into the damage formula.
     def battle_armor_ability_attacker(self):
-        if "battle-armor" not in self.attacker.abilities:
+        if "battle-armor" not in self.attacker_abilities:
             return self.critical_hit_roll()
         return 1
     def battle_armor_ability_defender(self):
-        if "battle-armor" not in self.defender.abilities:
+        if "battle-armor" not in self.defender_abilities:
             return self.critical_hit_roll()
         return 1
 
     # Sturdy: At full HP, survives a hit that would KO it with 1 HP left. Also immune to one-hit KO moves.
     # damage = the final damage you calculated for this hit. Returns the damage actually taken.
     def sturdy_ability_attacker(self, damage, current_hp, max_hp):
-        if "sturdy" not in self.attacker.abilities:
+        if "sturdy" not in self.attacker_abilities:
             return damage
         if self.ohko_move():
             return 0
@@ -780,7 +792,7 @@ class DamageCalculator:
             return current_hp - 1
         return damage
     def sturdy_ability_defender(self, damage, current_hp, max_hp):
-        if "sturdy" not in self.defender.abilities:
+        if "sturdy" not in self.defender_abilities:
             return damage
         if self.ohko_move():
             return 0
@@ -791,7 +803,7 @@ class DamageCalculator:
     # Damp: No Pokémon on the field can use explosive moves, and Aftermath won't trigger.
     # Damp affects the whole field, so it's one check instead of attacker/defender versions.
     def damp_on_field(self):
-        return "damp" in self.attacker.abilities or "damp" in self.defender.abilities
+        return "damp" in self.attacker_abilities or "damp" in self.defender_abilities
     def damp_ability(self):
         if self.damp_on_field() and self.explosive_move():
             return 0
@@ -800,13 +812,13 @@ class DamageCalculator:
 
     # Limber: The Pokémon can't be paralyzed. Returns the status that actually sticks.
     def limber_ability_attacker(self):
-        if "limber" not in self.attacker.abilities:
+        if "limber" not in self.attacker_abilities:
             return self.status_attacker
         if self.status_attacker == STATUS_IMMUNITY_ABILITIES["limber"]:
             return None
         return self.status_attacker
     def limber_ability_defender(self):
-        if "limber" not in self.defender.abilities:
+        if "limber" not in self.defender_abilities:
             return self.status_defender
         if self.status_defender == STATUS_IMMUNITY_ABILITIES["limber"]:
             return None
@@ -819,37 +831,37 @@ class DamageCalculator:
         accuracy = self.move_data.accuracy
         if accuracy is None:
             return None
-        if "sand-veil" not in self.attacker.abilities or self.current_weather() != "sandstorm":
+        if "sand-veil" not in self.attacker_abilities or self.current_weather() != "sandstorm":
             return accuracy
         return accuracy * 0.8
     def sand_veil_ability_defender(self):
         accuracy = self.move_data.accuracy
         if accuracy is None:
             return None
-        if "sand-veil" not in self.defender.abilities or self.current_weather() != "sandstorm":
+        if "sand-veil" not in self.defender_abilities or self.current_weather() != "sandstorm":
             return accuracy
         return accuracy * 0.8
 
     # Volt Absorb: Electric moves don't affect the Pokémon. Instead they heal 1/4 of its max HP.
     def volt_absorb_ability_attacker(self):
-        if "volt-absorb" not in self.attacker.abilities or self.move_type != "electric":
+        if "volt-absorb" not in self.attacker_abilities or self.move_type != "electric":
             return self.move_power, 0
         return 0, 0.25
     def volt_absorb_ability_defender(self):
-        if "volt-absorb" not in self.defender.abilities or self.move_type != "electric":
+        if "volt-absorb" not in self.defender_abilities or self.move_type != "electric":
             return self.move_power, 0
         return 0, 0.25
 
     # Water Absorb: Water moves don't affect the Pokémon. Instead they heal 1/4 of its max HP.
     # In extreme sun, damaging water moves evaporate before they land, so there's nothing to absorb.
     def water_absorb_ability_attacker(self):
-        if "water-absorb" not in self.attacker.abilities or self.move_type != "water":
+        if "water-absorb" not in self.attacker_abilities or self.move_type != "water":
             return self.move_power, 0
         if self.weather_move_power() == 0:
             return 0, 0
         return 0, 0.25
     def water_absorb_ability_defender(self):
-        if "water-absorb" not in self.defender.abilities or self.move_type != "water":
+        if "water-absorb" not in self.defender_abilities or self.move_type != "water":
             return self.move_power, 0
         if self.weather_move_power() == 0:
             return 0, 0
@@ -857,7 +869,7 @@ class DamageCalculator:
 
     # Static: When the Pokémon is hit by a contact move, the attacker has a 30% chance of getting paralyzed. Returns the status that actually sticks.
     def static_ability_attacker(self):
-        if "static" not in self.attacker.abilities or not self.contact_move():
+        if "static" not in self.attacker_abilities or not self.contact_move():
             return self.status_defender
         if self.status_effects_defender() or self.status_immune_defender("paralysis"):
             return self.status_defender
@@ -865,7 +877,7 @@ class DamageCalculator:
             return "paralysis"
         return self.status_defender
     def static_ability_defender(self):
-        if "static" not in self.defender.abilities or not self.contact_move():
+        if "static" not in self.defender_abilities or not self.contact_move():
             return self.status_attacker
         if self.status_effects_attacker() or self.status_immune_attacker("paralysis"):
             return self.status_attacker
@@ -876,11 +888,11 @@ class DamageCalculator:
     # Oblivious: The Pokémon can't be infatuated or taunted, and Intimidate doesn't lower its Attack.
     # incoming_effect = the effect a move or ability is trying to give ("infatuation", "taunt", "intimidate"). Returns True if Oblivious blocks it.
     def oblivious_ability_attacker(self, incoming_effect):
-        if "oblivious" not in self.attacker.abilities:
+        if "oblivious" not in self.attacker_abilities:
             return False
         return incoming_effect in VOLATILE_IMMUNITY_ABILITIES["oblivious"]
     def oblivious_ability_defender(self, incoming_effect):
-        if "oblivious" not in self.defender.abilities:
+        if "oblivious" not in self.defender_abilities:
             return False
         return incoming_effect in VOLATILE_IMMUNITY_ABILITIES["oblivious"]
 
@@ -892,27 +904,27 @@ class DamageCalculator:
         accuracy = self.move_data.accuracy
         if accuracy is None:
             return None
-        if "compound-eyes" not in self.attacker.abilities or self.ohko_move():
+        if "compound-eyes" not in self.attacker_abilities or self.ohko_move():
             return accuracy
         return accuracy * 1.3
     def compound_eyes_ability_defender(self):
         accuracy = self.move_data.accuracy
         if accuracy is None:
             return None
-        if "compound-eyes" not in self.defender.abilities or self.ohko_move():
+        if "compound-eyes" not in self.defender_abilities or self.ohko_move():
             return accuracy
         return accuracy * 1.3
 
     # Insomnia: The Pokémon can't fall asleep. Returns the status that actually sticks.
     # It also makes Rest fail and blocks Yawn's drowsiness. Will add those once Rest and Yawn are in.
     def insomnia_ability_attacker(self):
-        if "insomnia" not in self.attacker.abilities:
+        if "insomnia" not in self.attacker_abilities:
             return self.status_attacker
         if self.status_attacker == STATUS_IMMUNITY_ABILITIES["insomnia"]:
             return None
         return self.status_attacker
     def insomnia_ability_defender(self):
-        if "insomnia" not in self.defender.abilities:
+        if "insomnia" not in self.defender_abilities:
             return self.status_defender
         if self.status_defender == STATUS_IMMUNITY_ABILITIES["insomnia"]:
             return None
@@ -923,17 +935,17 @@ class DamageCalculator:
     # Call after the hit lands. Returns the Pokémon's types after the hit.
     # The new type only lasts until it switches out, so don't save it to the database.
     def color_change_ability_attacker(self, current_hp):
-        if "color-change" not in self.attacker.abilities:
+        if "color-change" not in self.attacker_abilities:
             return self.attacker.types
-        if not self.move_power or current_hp <= 0:
+        if self.status_move() or current_hp <= 0:
             return self.attacker.types
         if self.type_effectiveness_attacker() == 0 or self.move_type in self.attacker.types:
             return self.attacker.types
         return [self.move_type]
     def color_change_ability_defender(self, current_hp):
-        if "color-change" not in self.defender.abilities:
+        if "color-change" not in self.defender_abilities:
             return self.defender.types
-        if not self.move_power or current_hp <= 0:
+        if self.status_move() or current_hp <= 0:
             return self.defender.types
         if self.type_effectiveness_defender() == 0 or self.move_type in self.defender.types:
             return self.defender.types
@@ -941,13 +953,13 @@ class DamageCalculator:
 
     # Immunity: The Pokémon can't be poisoned or badly poisoned. Returns the status that actually sticks.
     def immunity_ability_attacker(self):
-        if "immunity" not in self.attacker.abilities:
+        if "immunity" not in self.attacker_abilities:
             return self.status_attacker
         if self.status_attacker == "poison" or self.status_attacker == "badly-poison":
             return None
         return self.status_attacker
     def immunity_ability_defender(self):
-        if "immunity" not in self.defender.abilities:
+        if "immunity" not in self.defender_abilities:
             return self.status_defender
         if self.status_defender == "poison" or self.status_defender == "badly-poison":
             return None
@@ -956,13 +968,13 @@ class DamageCalculator:
     # Flash Fire: Fire moves don't affect the Pokémon. Instead they turn on Flash Fire, which makes its own Fire moves do 1.5x dmg until it switches out.
     # Works on Will-O-Wisp too. In heavy rain, damaging Fire moves fail before they land, so nothing turns on.
     def flash_fire_ability_attacker(self):
-        if "flash-fire" not in self.attacker.abilities or self.move_type != "fire":
+        if "flash-fire" not in self.attacker_abilities or self.move_type != "fire":
             return self.move_power, False
         if self.move_power and self.weather_move_power() == 0:
             return 0, False
         return 0, True
     def flash_fire_ability_defender(self):
-        if "flash-fire" not in self.defender.abilities or self.move_type != "fire":
+        if "flash-fire" not in self.defender_abilities or self.move_type != "fire":
             return self.move_power, False
         if self.move_power and self.weather_move_power() == 0:
             return 0, False
@@ -971,13 +983,13 @@ class DamageCalculator:
     # Flash Fire boost: once Flash Fire is on, the Pokémon's Fire moves do 1.5x dmg.
     # flash_fire_active = the activated value you saved from flash_fire_ability.
     def flash_fire_boost_attacker(self, flash_fire_active):
-        if "flash-fire" not in self.attacker.abilities or not flash_fire_active:
+        if "flash-fire" not in self.attacker_abilities or not flash_fire_active:
             return self.move_power
         if not self.move_power or self.move_type != "fire":
             return self.move_power
         return self.move_power * 1.5
     def flash_fire_boost_defender(self, flash_fire_active):
-        if "flash-fire" not in self.defender.abilities or not flash_fire_active:
+        if "flash-fire" not in self.defender_abilities or not flash_fire_active:
             return self.move_power
         if not self.move_power or self.move_type != "fire":
             return self.move_power
@@ -988,23 +1000,23 @@ class DamageCalculator:
     # Returns (ailment_chance, flinch_chance) as decimals, so roll them with: random.random() < chance
     def shield_dust_ability_attacker(self):
         ailment_chance, flinch_chance, _ = self.serene_grace_ability_defender()
-        if "shield-dust" not in self.attacker.abilities or not self.move_power:
+        if "shield-dust" not in self.attacker_abilities or self.status_move():
             return ailment_chance, flinch_chance
         return 0, 0
     def shield_dust_ability_defender(self):
         ailment_chance, flinch_chance, _ = self.serene_grace_ability_attacker()
-        if "shield-dust" not in self.defender.abilities or not self.move_power:
+        if "shield-dust" not in self.defender_abilities or self.status_move():
             return ailment_chance, flinch_chance
         return 0, 0
 
     # Own Tempo: The Pokémon can't be confused, and Intimidate doesn't lower its Attack.
     # incoming_effect = the effect a move or ability is trying to give ("confusion", "intimidate"). 
     def own_tempo_ability_attacker(self, incoming_effect):
-        if "own-tempo" not in self.attacker.abilities:
+        if "own-tempo" not in self.attacker_abilities:
             return False
         return incoming_effect in VOLATILE_IMMUNITY_ABILITIES["own-tempo"]
     def own_tempo_ability_defender(self, incoming_effect):
-        if "own-tempo" not in self.defender.abilities:
+        if "own-tempo" not in self.defender_abilities:
             return False
         return incoming_effect in VOLATILE_IMMUNITY_ABILITIES["own-tempo"]
 
@@ -1014,65 +1026,65 @@ class DamageCalculator:
     def suction_cups_ability_attacker(self):
         if not self.force_switch_move():
             return False
-        return "suction-cups" not in self.attacker.abilities
+        return "suction-cups" not in self.attacker_abilities
     def suction_cups_ability_defender(self):
         if not self.force_switch_move():
             return False
-        return "suction-cups" not in self.defender.abilities
+        return "suction-cups" not in self.defender_abilities
 
     # Intimidate: When the Pokémon enters battle, it lowers the opposing Pokémon's Attack by 1 stage. Returns the opposing Pokémon's Attack stat.
     def intimidate_ability_attacker(self):
-        if "intimidate" not in self.attacker.abilities:
+        if "intimidate" not in self.attacker_abilities:
             return self.defender.stats["attack"]
-        for ability in self.defender.abilities:
+        for ability in self.defender_abilities:
             if ability in INTIMIDATE_IMMUNITY_ABILITIES:
                 return self.defender.stats["attack"]
-        if "guard-dog" in self.defender.abilities:
+        if "guard-dog" in self.defender_abilities:
             return self.defender.stats["attack"] * 1.5
         return self.defender.stats["attack"] * 2 / 3
     def intimidate_ability_defender(self):
-        if "intimidate" not in self.defender.abilities:
+        if "intimidate" not in self.defender_abilities:
             return self.attacker.stats["attack"]
-        for ability in self.attacker.abilities:
+        for ability in self.attacker_abilities:
             if ability in INTIMIDATE_IMMUNITY_ABILITIES:
                 return self.attacker.stats["attack"]
-        if "guard-dog" in self.attacker.abilities:
+        if "guard-dog" in self.attacker_abilities:
             return self.attacker.stats["attack"] * 1.5
         return self.attacker.stats["attack"] * 2 / 3
 
     # Shadow Tag: The opposing Pokémon can't switch out. Returns True if it's trapped.
     def shadow_tag_ability_attacker(self, switched_in_this_turn=False):
-        if "shadow-tag" not in self.attacker.abilities or switched_in_this_turn:
+        if "shadow-tag" not in self.attacker_abilities or switched_in_this_turn:
             return False
-        if "ghost" in self.defender.types or "shadow-tag" in self.defender.abilities:
+        if "ghost" in self.defender.types or "shadow-tag" in self.defender_abilities:
             return False
         return True
     def shadow_tag_ability_defender(self, switched_in_this_turn=False):
-        if "shadow-tag" not in self.defender.abilities or switched_in_this_turn:
+        if "shadow-tag" not in self.defender_abilities or switched_in_this_turn:
             return False
-        if "ghost" in self.attacker.types or "shadow-tag" in self.attacker.abilities:
+        if "ghost" in self.attacker.types or "shadow-tag" in self.attacker_abilities:
             return False
         return True
 
     # Rough Skin: When the Pokémon is hit by a contact move, the attacker takes 1/8 of its max HP as dmg.
     def rough_skin_ability_attacker(self):
-        if "rough-skin" not in self.attacker.abilities or not self.contact_move():
+        if "rough-skin" not in self.attacker_abilities or not self.contact_move():
             return 0
-        if "magic-guard" in self.defender.abilities:
+        if "magic-guard" in self.defender_abilities:
             return 0
         return 0.125
     def rough_skin_ability_defender(self):
-        if "rough-skin" not in self.defender.abilities or not self.contact_move():
+        if "rough-skin" not in self.defender_abilities or not self.contact_move():
             return 0
-        if "magic-guard" in self.attacker.abilities:
+        if "magic-guard" in self.attacker_abilities:
             return 0
         return 0.125
 
     # Effect Spore: When the Pokémon is hit by a contact move, the attacker has a 30% chance of getting poisoned, paralyzed, or put to sleep. Grass types are immune.
     def effect_spore_ability_attacker(self):
-        if "effect-spore" not in self.attacker.abilities or not self.contact_move():
+        if "effect-spore" not in self.attacker_abilities or not self.contact_move():
             return self.status_defender
-        if "grass" in self.defender.types or "overcoat" in self.defender.abilities or self.status_effects_defender():
+        if "grass" in self.defender.types or "overcoat" in self.defender_abilities or self.status_effects_defender():
             return self.status_defender
         roll = random.random()
         if roll < 0.11:
@@ -1087,9 +1099,9 @@ class DamageCalculator:
             return self.status_defender
         return incoming_status
     def effect_spore_ability_defender(self):
-        if "effect-spore" not in self.defender.abilities or not self.contact_move():
+        if "effect-spore" not in self.defender_abilities or not self.contact_move():
             return self.status_attacker
-        if "grass" in self.attacker.types or "overcoat" in self.attacker.abilities or self.status_effects_attacker():
+        if "grass" in self.attacker.types or "overcoat" in self.attacker_abilities or self.status_effects_attacker():
             return self.status_attacker
         roll = random.random()
         if roll < 0.11:
@@ -1107,13 +1119,13 @@ class DamageCalculator:
     # Synchronize: If another Pokémon burns, paralyzes, or poisons this Pokémon, that Pokémon gets the same status.
     # incoming_status = the status this Pokémon just got. Returns the status that actually sticks on the other Pokémon.
     def synchronize_ability_attacker(self, incoming_status):
-        if "synchronize" not in self.attacker.abilities or incoming_status not in SYNCHRONIZE_STATUSES:
+        if "synchronize" not in self.attacker_abilities or incoming_status not in SYNCHRONIZE_STATUSES:
             return self.status_defender
         if self.status_effects_defender() or self.status_immune_defender(incoming_status):
             return self.status_defender
         return incoming_status
     def synchronize_ability_defender(self, incoming_status):
-        if "synchronize" not in self.defender.abilities or incoming_status not in SYNCHRONIZE_STATUSES:
+        if "synchronize" not in self.defender_abilities or incoming_status not in SYNCHRONIZE_STATUSES:
             return self.status_attacker
         if self.status_effects_attacker() or self.status_immune_attacker(incoming_status):
             return self.status_attacker
@@ -1122,13 +1134,13 @@ class DamageCalculator:
     # Clear Body: Other Pokémon's moves and abilities can't lower this Pokémon's stats.
     # stage_change = how many stages the stat is changing. Returns the stage change that actually happens.
     def clear_body_ability_attacker(self, stage_change, from_opponent=True):
-        if "clear-body" not in self.attacker.abilities:
+        if "clear-body" not in self.attacker_abilities:
             return stage_change
         if stage_change < 0 and from_opponent:
             return 0
         return stage_change
     def clear_body_ability_defender(self, stage_change, from_opponent=True):
-        if "clear-body" not in self.defender.abilities:
+        if "clear-body" not in self.defender_abilities:
             return stage_change
         if stage_change < 0 and from_opponent:
             return 0
@@ -1136,21 +1148,21 @@ class DamageCalculator:
 
     # Natural Cure: The Pokémon's status is cured when it switches out.
     def natural_cure_ability_attacker(self):
-        if "natural-cure" not in self.attacker.abilities:
+        if "natural-cure" not in self.attacker_abilities:
             return self.status_attacker
         return None
     def natural_cure_ability_defender(self):
-        if "natural-cure" not in self.defender.abilities:
+        if "natural-cure" not in self.defender_abilities:
             return self.status_defender
         return None
 
     # Lightning Rod: Electric moves don't affect the Pokémon. Instead they raise its Sp. Atk by 1 stage.
     def lightning_rod_ability_attacker(self):
-        if "lightning-rod" not in self.attacker.abilities or self.move_type != "electric":
+        if "lightning-rod" not in self.attacker_abilities or self.move_type != "electric":
             return self.move_power, 0
         return 0, 1
     def lightning_rod_ability_defender(self):
-        if "lightning-rod" not in self.defender.abilities or self.move_type != "electric":
+        if "lightning-rod" not in self.defender_abilities or self.move_type != "electric":
             return self.move_power, 0
         return 0, 1
 
@@ -1163,7 +1175,7 @@ class DamageCalculator:
             ailment_chance = (self.move_data.meta.get("ailment_chance") or 0) / 100
             stat_chance = (self.move_data.meta.get("stat_chance") or 0) / 100
         flinch_chance = self.stench_ability_attacker()
-        if "serene-grace" not in self.attacker.abilities or not self.move_power:
+        if "serene-grace" not in self.attacker_abilities or self.status_move():
             return ailment_chance, flinch_chance, stat_chance
         return min(ailment_chance * 2, 1), min(flinch_chance * 2, 1), min(stat_chance * 2, 1)
     def serene_grace_ability_defender(self):
@@ -1173,19 +1185,19 @@ class DamageCalculator:
             ailment_chance = (self.move_data.meta.get("ailment_chance") or 0) / 100
             stat_chance = (self.move_data.meta.get("stat_chance") or 0) / 100
         flinch_chance = self.stench_ability_defender()
-        if "serene-grace" not in self.defender.abilities or not self.move_power:
+        if "serene-grace" not in self.defender_abilities or self.status_move():
             return ailment_chance, flinch_chance, stat_chance
         return min(ailment_chance * 2, 1), min(flinch_chance * 2, 1), min(stat_chance * 2, 1)
 
     # Swift Swim: Doubles the Pokémon's Speed in rain.
     def swift_swim_ability_attacker(self):
-        if "swift-swim" not in self.attacker.abilities:
+        if "swift-swim" not in self.attacker_abilities:
             return self.attacker.stats["speed"]
         if self.current_weather() in ("rain", "heavy-rain"):
             return self.attacker.stats["speed"] * 2
         return self.attacker.stats["speed"]
     def swift_swim_ability_defender(self):
-        if "swift-swim" not in self.defender.abilities:
+        if "swift-swim" not in self.defender_abilities:
             return self.defender.stats["speed"]
         if self.current_weather() in ("rain", "heavy-rain"):
             return self.defender.stats["speed"] * 2
@@ -1193,13 +1205,13 @@ class DamageCalculator:
 
     # Chlorophyll: Doubles the Pokémon's Speed in harsh sunlight.
     def chlorophyll_ability_attacker(self):
-        if "chlorophyll" not in self.attacker.abilities:
+        if "chlorophyll" not in self.attacker_abilities:
             return self.attacker.stats["speed"]
         if self.current_weather() in ("sun", "extreme-sun"):
             return self.attacker.stats["speed"] * 2
         return self.attacker.stats["speed"]
     def chlorophyll_ability_defender(self):
-        if "chlorophyll" not in self.defender.abilities:
+        if "chlorophyll" not in self.defender_abilities:
             return self.defender.stats["speed"]
         if self.current_weather() in ("sun", "extreme-sun"):
             return self.defender.stats["speed"] * 2
@@ -1211,7 +1223,7 @@ class DamageCalculator:
         accuracy = self.move_data.accuracy
         if accuracy is None:
             return None
-        if "illuminate" in self.attacker.abilities:
+        if "illuminate" in self.attacker_abilities:
             target_evasion_stage = 0
         stage = max(-6, min(6, accuracy_stage - target_evasion_stage))
         if stage >= 0:
@@ -1221,7 +1233,7 @@ class DamageCalculator:
         accuracy = self.move_data.accuracy
         if accuracy is None:
             return None
-        if "illuminate" in self.defender.abilities:
+        if "illuminate" in self.defender_abilities:
             target_evasion_stage = 0
         stage = max(-6, min(6, accuracy_stage - target_evasion_stage))
         if stage >= 0:
@@ -1230,13 +1242,13 @@ class DamageCalculator:
 
     # Illuminate: Other Pokémon can't lower this Pokémon's accuracy. Returns the stage change that actually happens.
     def illuminate_accuracy_drop_attacker(self, stage_change, from_opponent=True):
-        if "illuminate" not in self.attacker.abilities:
+        if "illuminate" not in self.attacker_abilities:
             return stage_change
         if stage_change < 0 and from_opponent:
             return 0
         return stage_change
     def illuminate_accuracy_drop_defender(self, stage_change, from_opponent=True):
-        if "illuminate" not in self.defender.abilities:
+        if "illuminate" not in self.defender_abilities:
             return stage_change
         if stage_change < 0 and from_opponent:
             return 0
@@ -1244,23 +1256,23 @@ class DamageCalculator:
 
     # Trace: When the Pokémon enters battle, it copies the opposing Pokémon's ability. Returns the Pokémon's abilities after Trace.
     def trace_ability_attacker(self):
-        if "trace" not in self.attacker.abilities:
-            return self.attacker.abilities
-        copied = [ability for ability in self.defender.abilities if ability not in TRACE_BANNED_ABILITIES]
+        if "trace" not in self.attacker_abilities:
+            return self.attacker_abilities
+        copied = [ability for ability in self.defender_abilities if ability not in TRACE_BANNED_ABILITIES]
         if not copied:
-            return self.attacker.abilities
+            return self.attacker_abilities
         return copied
     def trace_ability_defender(self):
-        if "trace" not in self.defender.abilities:
-            return self.defender.abilities
-        copied = [ability for ability in self.attacker.abilities if ability not in TRACE_BANNED_ABILITIES]
+        if "trace" not in self.defender_abilities:
+            return self.defender_abilities
+        copied = [ability for ability in self.attacker_abilities if ability not in TRACE_BANNED_ABILITIES]
         if not copied:
-            return self.defender.abilities
+            return self.defender_abilities
         return copied
 
     # Poison Point: When the Pokémon is hit by a contact move, the attacker has a 30% chance of getting poisoned. Returns the status that actually sticks.
     def poison_point_ability_attacker(self):
-        if "poison-point" not in self.attacker.abilities or not self.contact_move():
+        if "poison-point" not in self.attacker_abilities or not self.contact_move():
             return self.status_defender
         if self.status_effects_defender() or self.status_immune_defender("poison"):
             return self.status_defender
@@ -1268,7 +1280,7 @@ class DamageCalculator:
             return "poison"
         return self.status_defender
     def poison_point_ability_defender(self):
-        if "poison-point" not in self.defender.abilities or not self.contact_move():
+        if "poison-point" not in self.defender_abilities or not self.contact_move():
             return self.status_attacker
         if self.status_effects_attacker() or self.status_immune_attacker("poison"):
             return self.status_attacker
@@ -1279,23 +1291,23 @@ class DamageCalculator:
     # Inner Focus: The Pokémon can't flinch, and Intimidate doesn't lower its Attack.
     # incoming_effect = the effect a move or ability is trying to give ("flinch", "intimidate"). Returns True if Inner Focus blocks it.
     def inner_focus_ability_attacker(self, incoming_effect):
-        if "inner-focus" not in self.attacker.abilities:
+        if "inner-focus" not in self.attacker_abilities:
             return False
         return incoming_effect in VOLATILE_IMMUNITY_ABILITIES["inner-focus"]
     def inner_focus_ability_defender(self, incoming_effect):
-        if "inner-focus" not in self.defender.abilities:
+        if "inner-focus" not in self.defender_abilities:
             return False
         return incoming_effect in VOLATILE_IMMUNITY_ABILITIES["inner-focus"]
 
     # Magma Armor: The Pokémon can't be frozen. Returns the status that actually sticks.
     def magma_armor_ability_attacker(self):
-        if "magma-armor" not in self.attacker.abilities:
+        if "magma-armor" not in self.attacker_abilities:
             return self.status_attacker
         if self.status_attacker == STATUS_IMMUNITY_ABILITIES["magma-armor"]:
             return None
         return self.status_attacker
     def magma_armor_ability_defender(self):
-        if "magma-armor" not in self.defender.abilities:
+        if "magma-armor" not in self.defender_abilities:
             return self.status_defender
         if self.status_defender == STATUS_IMMUNITY_ABILITIES["magma-armor"]:
             return None
@@ -1303,13 +1315,13 @@ class DamageCalculator:
 
     # Water Veil: The Pokémon can't be burned. Returns the status that actually sticks.
     def water_veil_ability_attacker(self):
-        if "water-veil" not in self.attacker.abilities:
+        if "water-veil" not in self.attacker_abilities:
             return self.status_attacker
         if self.status_attacker == STATUS_IMMUNITY_ABILITIES["water-veil"]:
             return None
         return self.status_attacker
     def water_veil_ability_defender(self):
-        if "water-veil" not in self.defender.abilities:
+        if "water-veil" not in self.defender_abilities:
             return self.status_defender
         if self.status_defender == STATUS_IMMUNITY_ABILITIES["water-veil"]:
             return None
@@ -1317,13 +1329,13 @@ class DamageCalculator:
 
     # Magnet Pull: Opposing Steel types can't switch out. Returns True if it's trapped.
     def magnet_pull_ability_attacker(self, switched_in_this_turn=False):
-        if "magnet-pull" not in self.attacker.abilities or switched_in_this_turn:
+        if "magnet-pull" not in self.attacker_abilities or switched_in_this_turn:
             return False
         if "steel" not in self.defender.types or "ghost" in self.defender.types:
             return False
         return True
     def magnet_pull_ability_defender(self, switched_in_this_turn=False):
-        if "magnet-pull" not in self.defender.abilities or switched_in_this_turn:
+        if "magnet-pull" not in self.defender_abilities or switched_in_this_turn:
             return False
         if "steel" not in self.attacker.types or "ghost" in self.attacker.types:
             return False
@@ -1331,14 +1343,14 @@ class DamageCalculator:
 
     # Soundproof: The Pokémon is immune to sound-based moves.
     def soundproof_ability_attacker(self):
-        if "soundproof" not in self.attacker.abilities:
+        if "soundproof" not in self.attacker_abilities:
             return self.move_power
         if self.sound_move():
             return 0
         else:
             return self.move_power
     def soundproof_ability_defender(self):
-        if "soundproof" not in self.defender.abilities:
+        if "soundproof" not in self.defender_abilities:
             return self.move_power
         if self.sound_move():
             return 0
@@ -1347,13 +1359,13 @@ class DamageCalculator:
 
     # Rain Dish: Heals 1/16 of the Pokémon's max HP at the end of each turn in rain.
     def rain_dish_ability_attacker(self):
-        if "rain-dish" not in self.attacker.abilities:
+        if "rain-dish" not in self.attacker_abilities:
             return 0
         if self.current_weather() in ("rain", "heavy-rain"):
             return 0.0625
         return 0
     def rain_dish_ability_defender(self):
-        if "rain-dish" not in self.defender.abilities:
+        if "rain-dish" not in self.defender_abilities:
             return 0
         if self.current_weather() in ("rain", "heavy-rain"):
             return 0.0625
@@ -1361,17 +1373,17 @@ class DamageCalculator:
 
     # Sand Stream: Summons a sandstorm for 5 turns when the Pokémon enters battle.
     def sand_stream_ability_attacker(self):
-        if "sand-stream" not in self.attacker.abilities:
+        if "sand-stream" not in self.attacker_abilities:
             return self.weather
-        if WEATHER_EFFECTS.get(self.weather, {}).get("primal"):
+        if self.weather == "sandstorm" or WEATHER_EFFECTS.get(self.weather, {}).get("primal"):
             return self.weather
         self.weather = "sandstorm"
         self.weather_turns = WEATHER_EFFECTS["sandstorm"]["turns"]
         return self.weather
     def sand_stream_ability_defender(self):
-        if "sand-stream" not in self.defender.abilities:
+        if "sand-stream" not in self.defender_abilities:
             return self.weather
-        if WEATHER_EFFECTS.get(self.weather, {}).get("primal"):
+        if self.weather == "sandstorm" or WEATHER_EFFECTS.get(self.weather, {}).get("primal"):
             return self.weather
         self.weather = "sandstorm"
         self.weather_turns = WEATHER_EFFECTS["sandstorm"]["turns"]
@@ -1379,28 +1391,28 @@ class DamageCalculator:
 
     # Pressure: Moves used against the Pokémon use 1 extra PP. Returns how much PP the move uses.
     def pressure_ability_attacker(self):
-        if "pressure" not in self.attacker.abilities:
+        if "pressure" not in self.attacker_abilities:
             return 1
         return 2
     def pressure_ability_defender(self):
-        if "pressure" not in self.defender.abilities:
+        if "pressure" not in self.defender_abilities:
             return 1
         return 2
 
     # Early Bird: The Pokémon wakes up from sleep twice as fast.
     # sleep_turns = how many turns it would normally sleep. Returns how many turns it actually sleeps.
     def early_bird_ability_attacker(self, sleep_turns):
-        if "early-bird" not in self.attacker.abilities:
+        if "early-bird" not in self.attacker_abilities:
             return sleep_turns
         return sleep_turns // 2
     def early_bird_ability_defender(self, sleep_turns):
-        if "early-bird" not in self.defender.abilities:
+        if "early-bird" not in self.defender_abilities:
             return sleep_turns
         return sleep_turns // 2
 
     # Flame Body: When the Pokémon is hit by a contact move, the attacker has a 30% chance of getting burned. Returns the status that actually sticks.
     def flame_body_ability_attacker(self):
-        if "flame-body" not in self.attacker.abilities or not self.contact_move():
+        if "flame-body" not in self.attacker_abilities or not self.contact_move():
             return self.status_defender
         if self.status_effects_defender() or self.status_immune_defender("burn"):
             return self.status_defender
@@ -1408,7 +1420,7 @@ class DamageCalculator:
             return "burn"
         return self.status_defender
     def flame_body_ability_defender(self):
-        if "flame-body" not in self.defender.abilities or not self.contact_move():
+        if "flame-body" not in self.defender_abilities or not self.contact_move():
             return self.status_attacker
         if self.status_effects_attacker() or self.status_immune_attacker("burn"):
             return self.status_attacker
@@ -1418,11 +1430,11 @@ class DamageCalculator:
 
     # Run Away: The Pokémon can always flee from wild battles, even when it's trapped. Returns True if it can flee.
     def run_away_ability_attacker(self, trapped=False):
-        if "run-away" in self.attacker.abilities:
+        if "run-away" in self.attacker_abilities:
             return True
         return not trapped
     def run_away_ability_defender(self, trapped=False):
-        if "run-away" in self.defender.abilities:
+        if "run-away" in self.defender_abilities:
             return True
         return not trapped
 
@@ -1432,7 +1444,7 @@ class DamageCalculator:
         accuracy = self.move_data.accuracy
         if accuracy is None:
             return None
-        if "keen-eye" in self.attacker.abilities:
+        if "keen-eye" in self.attacker_abilities:
             target_evasion_stage = 0
         stage = max(-6, min(6, accuracy_stage - target_evasion_stage))
         if stage >= 0:
@@ -1442,7 +1454,7 @@ class DamageCalculator:
         accuracy = self.move_data.accuracy
         if accuracy is None:
             return None
-        if "keen-eye" in self.defender.abilities:
+        if "keen-eye" in self.defender_abilities:
             target_evasion_stage = 0
         stage = max(-6, min(6, accuracy_stage - target_evasion_stage))
         if stage >= 0:
@@ -1451,13 +1463,13 @@ class DamageCalculator:
 
     # Keen Eye: Other Pokémon can't lower this Pokémon's accuracy. Returns the stage change that actually happens.
     def keen_eye_accuracy_drop_attacker(self, stage_change, from_opponent=True):
-        if "keen-eye" not in self.attacker.abilities:
+        if "keen-eye" not in self.attacker_abilities:
             return stage_change
         if stage_change < 0 and from_opponent:
             return 0
         return stage_change
     def keen_eye_accuracy_drop_defender(self, stage_change, from_opponent=True):
-        if "keen-eye" not in self.defender.abilities:
+        if "keen-eye" not in self.defender_abilities:
             return stage_change
         if stage_change < 0 and from_opponent:
             return 0
@@ -1466,13 +1478,13 @@ class DamageCalculator:
     # Hyper Cutter: Other Pokémon's moves and abilities can't lower this Pokémon's Attack.
     # stat = the stat that's changing. Returns the stage change that actually happens.
     def hyper_cutter_ability_attacker(self, stat, stage_change, from_opponent=True):
-        if "hyper-cutter" not in self.attacker.abilities:
+        if "hyper-cutter" not in self.attacker_abilities:
             return stage_change
         if stat == "attack" and stage_change < 0 and from_opponent:
             return 0
         return stage_change
     def hyper_cutter_ability_defender(self, stat, stage_change, from_opponent=True):
-        if "hyper-cutter" not in self.defender.abilities:
+        if "hyper-cutter" not in self.defender_abilities:
             return stage_change
         if stat == "attack" and stage_change < 0 and from_opponent:
             return 0
@@ -1480,13 +1492,131 @@ class DamageCalculator:
 
     # Pickup: If the Pokémon isn't holding an item, it picks up the item the other Pokémon used up this turn. Returns the item it's holding after.
     def pickup_ability_attacker(self, held_item, used_item):
-        if "pickup" not in self.attacker.abilities or held_item:
+        if "pickup" not in self.attacker_abilities or held_item:
             return held_item
         return used_item
     def pickup_ability_defender(self, held_item, used_item):
-        if "pickup" not in self.defender.abilities or held_item:
+        if "pickup" not in self.defender_abilities or held_item:
             return held_item
         return used_item
+
+    # Truant: The Pokémon can only use a move every other turn.
+    # moved_last_turn = True if the Pokémon used a move last turn. Returns True if it can move this turn.
+    def truant_ability_attacker(self, moved_last_turn):
+        if "truant" not in self.attacker_abilities:
+            return True
+        return not moved_last_turn
+    def truant_ability_defender(self, moved_last_turn):
+        if "truant" not in self.defender_abilities:
+            return True
+        return not moved_last_turn
+
+    # Hustle: Boosts the Pokémon's Attack stat by 50%.
+    def hustle_ability_attacker(self):
+        if "hustle" not in self.attacker_abilities:
+            return self.attacker.stats["attack"]
+        return self.attacker.stats["attack"] * 1.5
+    def hustle_ability_defender(self):
+        if "hustle" not in self.defender_abilities:
+            return self.defender.stats["attack"]
+        return self.defender.stats["attack"] * 1.5
+
+    # Hustle: The Pokémon's physical moves are 20% less accurate. Returns the move's accuracy when this Pokémon uses it.
+    def hustle_accuracy_attacker(self):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if "hustle" not in self.attacker_abilities or self.move_data.damage_class != "physical":
+            return accuracy
+        return accuracy * 0.8
+    def hustle_accuracy_defender(self):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if "hustle" not in self.defender_abilities or self.move_data.damage_class != "physical":
+            return accuracy
+        return accuracy * 0.8
+
+    # Cute Charm: When the Pokémon is hit by a contact move, the attacker has a 30% chance of getting infatuated if they're opposite genders.
+    # attacker_gender and defender_gender = "male", "female", or None. Returns True if the other Pokémon gets infatuated.
+    def cute_charm_ability_attacker(self, attacker_gender, defender_gender):
+        if "cute-charm" not in self.attacker_abilities or not self.contact_move():
+            return False
+        if attacker_gender is None or defender_gender is None or attacker_gender == defender_gender:
+            return False
+        if self.oblivious_ability_defender("infatuation"):
+            return False
+        return random.random() < 0.30
+    def cute_charm_ability_defender(self, attacker_gender, defender_gender):
+        if "cute-charm" not in self.defender_abilities or not self.contact_move():
+            return False
+        if attacker_gender is None or defender_gender is None or attacker_gender == defender_gender:
+            return False
+        if self.oblivious_ability_attacker("infatuation"):
+            return False
+        return random.random() < 0.30
+
+    # Plus: Boosts the Pokémon's Sp. Atk by 50% if an ally has Plus or Minus. ally_abilities = the ally's abilities.
+    def plus_ability_attacker(self, ally_abilities=None):
+        if "plus" not in self.attacker_abilities or not ally_abilities:
+            return self.attacker.stats["special-attack"]
+        if "plus" in ally_abilities or "minus" in ally_abilities:
+            return self.attacker.stats["special-attack"] * 1.5
+        return self.attacker.stats["special-attack"]
+    def plus_ability_defender(self, ally_abilities=None):
+        if "plus" not in self.defender_abilities or not ally_abilities:
+            return self.defender.stats["special-attack"]
+        if "plus" in ally_abilities or "minus" in ally_abilities:
+            return self.defender.stats["special-attack"] * 1.5
+        return self.defender.stats["special-attack"]
+
+    # Minus: Boosts the Pokémon's Sp. Atk by 50% if an ally has Plus or Minus. ally_abilities = the ally's abilities.
+    def minus_ability_attacker(self, ally_abilities=None):
+        if "minus" not in self.attacker_abilities or not ally_abilities:
+            return self.attacker.stats["special-attack"]
+        if "plus" in ally_abilities or "minus" in ally_abilities:
+            return self.attacker.stats["special-attack"] * 1.5
+        return self.attacker.stats["special-attack"]
+    def minus_ability_defender(self, ally_abilities=None):
+        if "minus" not in self.defender_abilities or not ally_abilities:
+            return self.defender.stats["special-attack"]
+        if "plus" in ally_abilities or "minus" in ally_abilities:
+            return self.defender.stats["special-attack"] * 1.5
+        return self.defender.stats["special-attack"]
+
+    # Forecast: The Pokémon becomes Fire type in sun, Water type in rain, and Ice type in snow. Returns the Pokémon's types.
+    def forecast_ability_attacker(self):
+        if "forecast" not in self.attacker_abilities:
+            return self.attacker.types
+        weather = self.current_weather()
+        if weather in ("sun", "extreme-sun"):
+            return ["fire"]
+        if weather in ("rain", "heavy-rain"):
+            return ["water"]
+        if weather in ("snow", "hail"):
+            return ["ice"]
+        return ["normal"]
+    def forecast_ability_defender(self):
+        if "forecast" not in self.defender_abilities:
+            return self.defender.types
+        weather = self.current_weather()
+        if weather in ("sun", "extreme-sun"):
+            return ["fire"]
+        if weather in ("rain", "heavy-rain"):
+            return ["water"]
+        if weather in ("snow", "hail"):
+            return ["ice"]
+        return ["normal"]
+
+    # Sticky Hold: Other Pokémon can't steal or remove the Pokémon's held item. Returns True if the move takes the item.
+    def sticky_hold_ability_attacker(self):
+        if not self.item_removing_move():
+            return False
+        return "sticky-hold" not in self.attacker_abilities
+    def sticky_hold_ability_defender(self):
+        if not self.item_removing_move():
+            return False
+        return "sticky-hold" not in self.defender_abilities
 
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
