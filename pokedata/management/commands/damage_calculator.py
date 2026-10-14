@@ -1618,6 +1618,153 @@ class DamageCalculator:
             return False
         return "sticky-hold" not in self.defender_abilities
 
+    # Shed Skin: The Pokémon has a 33% chance of curing its status at the end of each turn.
+    def shed_skin_ability_attacker(self):
+        if "shed-skin" not in self.attacker_abilities or not self.status_effects_attacker():
+            return self.status_attacker
+        if random.random() < 0.33:
+            return None
+        return self.status_attacker
+    def shed_skin_ability_defender(self):
+        if "shed-skin" not in self.defender_abilities or not self.status_effects_defender():
+            return self.status_defender
+        if random.random() < 0.33:
+            return None
+        return self.status_defender
+
+    # Liquid Ooze: Moves that drain HP from this Pokémon hurt the attacker instead of healing it. Returns the move's drain.
+    def liquid_ooze_ability_attacker(self):
+        if self.move_data.meta is None:
+            return 0
+        drain = self.move_data.meta.get("drain", 0)
+        if "liquid-ooze" in self.attacker_abilities and drain > 0:
+            return -drain
+        return drain
+    def liquid_ooze_ability_defender(self):
+        if self.move_data.meta is None:
+            return 0
+        drain = self.move_data.meta.get("drain", 0)
+        if "liquid-ooze" in self.defender_abilities and drain > 0:
+            return -drain
+        return drain
+
+    # Overgrow: Boosts the power of the Pokémon's Grass-type moves by 50% when its HP is 1/3 or less.
+    def overgrow_ability_attacker(self, current_hp, max_hp):
+        if "overgrow" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "grass" and current_hp <= max_hp / 3:
+            return self.move_power * 1.5
+        return self.move_power
+    def overgrow_ability_defender(self, current_hp, max_hp):
+        if "overgrow" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "grass" and current_hp <= max_hp / 3:
+            return self.move_power * 1.5
+        return self.move_power
+
+    # Blaze: Boosts the power of the Pokémon's Fire-type moves by 50% when its HP is 1/3 or less.
+    def blaze_ability_attacker(self, current_hp, max_hp):
+        if "blaze" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "fire" and current_hp <= max_hp / 3:
+            return self.move_power * 1.5
+        return self.move_power
+    def blaze_ability_defender(self, current_hp, max_hp):
+        if "blaze" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "fire" and current_hp <= max_hp / 3:
+            return self.move_power * 1.5
+        return self.move_power
+
+    # Torrent: Boosts the power of the Pokémon's Water-type moves by 50% when its HP is 1/3 or less.
+    def torrent_ability_attacker(self, current_hp, max_hp):
+        if "torrent" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "water" and current_hp <= max_hp / 3:
+            return self.move_power * 1.5
+        return self.move_power
+    def torrent_ability_defender(self, current_hp, max_hp):
+        if "torrent" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "water" and current_hp <= max_hp / 3:
+            return self.move_power * 1.5
+        return self.move_power
+
+    # Swarm: Boosts the power of the Pokémon's Bug-type moves by 50% when its HP is 1/3 or less.
+    def swarm_ability_attacker(self, current_hp, max_hp):
+        if "swarm" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "bug" and current_hp <= max_hp / 3:
+            return self.move_power * 1.5
+        return self.move_power
+    def swarm_ability_defender(self, current_hp, max_hp):
+        if "swarm" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "bug" and current_hp <= max_hp / 3:
+            return self.move_power * 1.5
+        return self.move_power
+
+    # Drought: Summons harsh sunlight for 5 turns when the Pokémon enters battle.
+    def drought_ability_attacker(self):
+        if "drought" not in self.attacker_abilities:
+            return self.weather
+        if self.weather == "sun" or WEATHER_EFFECTS.get(self.weather, {}).get("primal"):
+            return self.weather
+        self.weather = "sun"
+        self.weather_turns = WEATHER_EFFECTS["sun"]["turns"]
+        return self.weather
+    def drought_ability_defender(self):
+        if "drought" not in self.defender_abilities:
+            return self.weather
+        if self.weather == "sun" or WEATHER_EFFECTS.get(self.weather, {}).get("primal"):
+            return self.weather
+        self.weather = "sun"
+        self.weather_turns = WEATHER_EFFECTS["sun"]["turns"]
+        return self.weather
+
+    # Arena Trap: Opposing Pokémon on the ground can't switch out. Returns True if it's trapped.
+    def arena_trap_ability_attacker(self, switched_in_this_turn=False):
+        if "arena-trap" not in self.attacker_abilities or switched_in_this_turn:
+            return False
+        if not self.grounded_defender() or "ghost" in self.defender.types:
+            return False
+        return True
+    def arena_trap_ability_defender(self, switched_in_this_turn=False):
+        if "arena-trap" not in self.defender_abilities or switched_in_this_turn:
+            return False
+        if not self.grounded_attacker() or "ghost" in self.attacker.types:
+            return False
+        return True
+
+    # Vital Spirit: The Pokémon can't fall asleep.
+    def vital_spirit_ability_attacker(self):
+        if "vital-spirit" not in self.attacker_abilities:
+            return self.status_attacker
+        if self.status_attacker == STATUS_IMMUNITY_ABILITIES["vital-spirit"]:
+            return None
+        return self.status_attacker
+    def vital_spirit_ability_defender(self):
+        if "vital-spirit" not in self.defender_abilities:
+            return self.status_defender
+        if self.status_defender == STATUS_IMMUNITY_ABILITIES["vital-spirit"]:
+            return None
+        return self.status_defender
+
+    # White Smoke: Other Pokémon's moves and abilities can't lower this Pokémon's stats.
+    # stage_change = how many stages the stat is changing. Returns the stage change that actually happens.
+    def white_smoke_ability_attacker(self, stage_change, from_opponent=True):
+        if "white-smoke" not in self.attacker_abilities:
+            return stage_change
+        if stage_change < 0 and from_opponent:
+            return 0
+        return stage_change
+    def white_smoke_ability_defender(self, stage_change, from_opponent=True):
+        if "white-smoke" not in self.defender_abilities:
+            return stage_change
+        if stage_change < 0 and from_opponent:
+            return 0
+        return stage_change
+
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
     # Will add after finishing abilities 
