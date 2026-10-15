@@ -238,6 +238,29 @@ NORMALIZE_EXCEPTIONS = {
     "struggle", "techno-blast", "terrain-pulse", "weather-ball",
 }
 
+# Abilities Mold Breaker ignores.
+BREAKABLE_ABILITIES = {
+    "armor-tail", "aroma-veil", "aura-break", "battle-armor", "big-pecks", "bulletproof",
+    "clear-body", "contrary", "damp", "dazzling", "disguise", "dry-skin",
+    "earth-eater", "eelevate", "filter", "flash-fire", "flower-gift", "flower-veil",
+    "fluffy", "friend-guard", "fur-coat", "good-as-gold", "grass-pelt", "guard-dog",
+    "heatproof", "heavy-metal", "hyper-cutter", "ice-face", "ice-scales", "illuminate",
+    "immunity", "inner-focus", "insomnia", "keen-eye", "leaf-guard", "levitate",
+    "light-metal", "lightning-rod", "limber", "magic-bounce", "magma-armor", "marvel-scale",
+    "minds-eye", "mirror-armor", "motor-drive", "multiscale", "oblivious", "overcoat",
+    "own-tempo", "pastel-veil", "punk-rock", "purifying-salt", "queenly-majesty", "sand-veil",
+    "sap-sipper", "shell-armor", "shield-dust", "simple", "snow-cloak", "solid-rock",
+    "soundproof", "sticky-hold", "storm-drain", "sturdy", "suction-cups", "sweet-veil",
+    "tangled-feet", "telepathy", "tera-shell", "thermal-exchange", "thick-fat", "unaware",
+    "vital-spirit", "volt-absorb", "water-absorb", "water-bubble", "water-veil", "well-baked-body",
+    "white-smoke", "wind-rider", "wonder-guard", "wonder-skin",
+}
+
+# Items that still work with Klutz.
+KLUTZ_EXCEPTIONS = {
+    "macho-brace", "power-anklet", "power-band", "power-belt", "power-bracer", "power-lens", "power-weight",
+}
+
 
 class DamageCalculator:
     # attacker_ability and defender_ability = the ability each Pokémon is using. If it's not given, it uses the Pokémon's first ability.
@@ -814,7 +837,6 @@ class DamageCalculator:
         if self.damp_on_field() and self.explosive_move():
             return 0
         return self.move_power
-        # When you add Aftermath, have it check damp_on_field() before dealing its damage.
 
     # Limber: The Pokémon can't be paralyzed. Returns the status that actually sticks.
     def limber_ability_attacker(self):
@@ -2102,6 +2124,205 @@ class DamageCalculator:
         if not self.move_power:
             return "normal", self.move_power
         return "normal", self.move_power * 1.2
+
+    # Sniper: The Pokémon's critical hits do 2.25x damage instead of 1.5x. Returns the crit multiplier.
+    def sniper_ability_attacker(self, critical_hit):
+        if not critical_hit:
+            return 1
+        if "sniper" in self.attacker_abilities:
+            return 2.25
+        return 1.5
+    def sniper_ability_defender(self, critical_hit):
+        if not critical_hit:
+            return 1
+        if "sniper" in self.defender_abilities:
+            return 2.25
+        return 1.5
+
+    # Magic Guard: The Pokémon only takes damage from attacks. Returns the indirect damage it actually takes.
+    # indirect_damage = dmg from weather, status, recoil, Life Orb, etc.
+    def magic_guard_ability_attacker(self, indirect_damage):
+        if "magic-guard" not in self.attacker_abilities:
+            return indirect_damage
+        return 0
+    def magic_guard_ability_defender(self, indirect_damage):
+        if "magic-guard" not in self.defender_abilities:
+            return indirect_damage
+        return 0
+
+    # No Guard: Moves used by or against the Pokémon always hit. Returns the move's accuracy. None means the move never misses.
+    # No Guard works both ways, so it's one check instead of attacker/defender versions.
+    def no_guard_on_field(self):
+        return "no-guard" in self.attacker_abilities or "no-guard" in self.defender_abilities
+    def no_guard_ability(self):
+        if self.no_guard_on_field():
+            return None
+        return self.move_data.accuracy
+
+    # Stall: The Pokémon always moves last among moves with the same priority. Returns the move's priority.
+    def stall_ability_attacker(self):
+        if "stall" not in self.attacker_abilities:
+            return self.move_data.priority
+        return self.move_data.priority - 0.1
+    def stall_ability_defender(self):
+        if "stall" not in self.defender_abilities:
+            return self.move_data.priority
+        return self.move_data.priority - 0.1
+
+    # Technician: Boosts the power of the Pokémon's moves with 60 power or less by 50%.
+    def technician_ability_attacker(self):
+        if "technician" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.move_power <= 60:
+            return self.move_power * 1.5
+        return self.move_power
+    def technician_ability_defender(self):
+        if "technician" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.move_power <= 60:
+            return self.move_power * 1.5
+        return self.move_power
+
+    # Leaf Guard: The Pokémon can't get a status condition in harsh sunlight.
+    def leaf_guard_ability_attacker(self):
+        if "leaf-guard" not in self.attacker_abilities:
+            return self.status_attacker
+        if self.current_weather() in ("sun", "extreme-sun"):
+            return None
+        return self.status_attacker
+    def leaf_guard_ability_defender(self):
+        if "leaf-guard" not in self.defender_abilities:
+            return self.status_defender
+        if self.current_weather() in ("sun", "extreme-sun"):
+            return None
+        return self.status_defender
+
+    # Klutz: The Pokémon can't use its held item. Returns the item that still works.
+    def klutz_ability_attacker(self, held_item):
+        if "klutz" not in self.attacker_abilities or held_item in KLUTZ_EXCEPTIONS:
+            return held_item
+        return None
+    def klutz_ability_defender(self, held_item):
+        if "klutz" not in self.defender_abilities or held_item in KLUTZ_EXCEPTIONS:
+            return held_item
+        return None
+
+    # Mold Breaker: The Pokémon's moves ignore abilities that would block or weaken them. Returns the target's abilities that still work.
+    def mold_breaker_ability_attacker(self):
+        if "mold-breaker" not in self.attacker_abilities:
+            return self.defender_abilities
+        return [ability for ability in self.defender_abilities if ability not in BREAKABLE_ABILITIES]
+    def mold_breaker_ability_defender(self):
+        if "mold-breaker" not in self.defender_abilities:
+            return self.attacker_abilities
+        return [ability for ability in self.attacker_abilities if ability not in BREAKABLE_ABILITIES]
+
+    # Super Luck: Raises the Pokémon's critical hit ratio by 1 stage. Returns the move's crit stage.
+    def super_luck_ability_attacker(self):
+        crit_stage = 0
+        if self.move_data.meta is not None:
+            crit_stage = self.move_data.meta.get("crit_rate") or 0
+        if "super-luck" in self.attacker_abilities:
+            crit_stage += 1
+        return min(crit_stage, 3)
+    def super_luck_ability_defender(self):
+        crit_stage = 0
+        if self.move_data.meta is not None:
+            crit_stage = self.move_data.meta.get("crit_rate") or 0
+        if "super-luck" in self.defender_abilities:
+            crit_stage += 1
+        return min(crit_stage, 3)
+
+    # Aftermath: If the Pokémon is knocked out by a contact move, the attacker takes 1/4 of its max HP as dmg.
+    def aftermath_ability_attacker(self, fainted):
+        if "aftermath" not in self.attacker_abilities or not fainted or not self.contact_move():
+            return 0
+        if self.damp_on_field() or "magic-guard" in self.defender_abilities:
+            return 0
+        return 0.25
+    def aftermath_ability_defender(self, fainted):
+        if "aftermath" not in self.defender_abilities or not fainted or not self.contact_move():
+            return 0
+        if self.damp_on_field() or "magic-guard" in self.attacker_abilities:
+            return 0
+        return 0.25
+
+    # Anticipation: The Pokémon shudders if the opponent has a super-effective or one-hit KO move. Returns True if it shudders.
+    def anticipation_ability_attacker(self):
+        if "anticipation" not in self.attacker_abilities or self.status_move():
+            return False
+        return self.type_effectiveness_attacker() > 1 or self.ohko_move()
+    def anticipation_ability_defender(self):
+        if "anticipation" not in self.defender_abilities or self.status_move():
+            return False
+        return self.type_effectiveness_defender() > 1 or self.ohko_move()
+        # Will check the opponent's whole moveset later. Right now it only checks the move being used.
+
+    # Forewarn: When the Pokémon enters battle, it reveals the opponent's strongest move. Returns that move's name.
+    # opponent_moves = the names of the opponent's moves.
+    def forewarn_ability_attacker(self, opponent_moves):
+        if "forewarn" not in self.attacker_abilities or not opponent_moves:
+            return None
+        strongest = max(opponent_moves, key=self.forewarn_move_power)
+        if self.forewarn_move_power(strongest) == 0:
+            return None
+        return strongest
+    def forewarn_ability_defender(self, opponent_moves):
+        if "forewarn" not in self.defender_abilities or not opponent_moves:
+            return None
+        strongest = max(opponent_moves, key=self.forewarn_move_power)
+        if self.forewarn_move_power(strongest) == 0:
+            return None
+        return strongest
+
+    # The power Forewarn uses to compare moves.
+    def forewarn_move_power(self, move_name):
+        if move_name in OHKO_MOVES:
+            return 150
+        if move_name in ("counter", "mirror-coat", "metal-burst"):
+            return 120
+        move = Moves.objects.get(name=move_name)
+        if move.damage_class == "status":
+            return 0
+        return move.power or 80
+
+    # Unaware: The Pokémon ignores the opponent's stat changes. Returns the opponent's stat stage that counts.
+    def unaware_ability_attacker(self, opponent_stage):
+        if "unaware" not in self.attacker_abilities:
+            return opponent_stage
+        return 0
+    def unaware_ability_defender(self, opponent_stage):
+        if "unaware" not in self.defender_abilities:
+            return opponent_stage
+        return 0
+
+    # Tinted Lens: The Pokémon's not very effective moves do double damage.
+    def tinted_lens_ability_attacker(self):
+        if "tinted-lens" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if 0 < self.type_effectiveness_defender() < 1:
+            return self.move_power * 2
+        return self.move_power
+    def tinted_lens_ability_defender(self):
+        if "tinted-lens" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if 0 < self.type_effectiveness_attacker() < 1:
+            return self.move_power * 2
+        return self.move_power
+
+    # Slow Start: The Pokémon's Attack and Speed are halved for its first 5 turns in battle. Returns its Attack and Speed.
+    def slow_start_ability_attacker(self, turns_on_field):
+        attack = self.attacker.stats["attack"]
+        speed = self.attacker.stats["speed"]
+        if "slow-start" not in self.attacker_abilities or turns_on_field >= 5:
+            return attack, speed
+        return attack * 0.5, speed * 0.5
+    def slow_start_ability_defender(self, turns_on_field):
+        attack = self.defender.stats["attack"]
+        speed = self.defender.stats["speed"]
+        if "slow-start" not in self.defender_abilities or turns_on_field >= 5:
+            return attack, speed
+        return attack * 0.5, speed * 0.5
 
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
