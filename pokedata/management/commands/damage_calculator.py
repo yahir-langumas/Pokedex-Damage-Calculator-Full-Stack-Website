@@ -232,6 +232,12 @@ TRACE_BANNED_ABILITIES = {
     "zen-mode", "zero-to-hero",
 }
 
+# Moves Normalize doesn't change to Normal type.
+NORMALIZE_EXCEPTIONS = {
+    "hidden-power", "judgment", "multi-attack", "natural-gift", "revelation-dance",
+    "struggle", "techno-blast", "terrain-pulse", "weather-ball",
+}
+
 
 class DamageCalculator:
     # attacker_ability and defender_ability = the ability each Pokémon is using. If it's not given, it uses the Pokémon's first ability.
@@ -1764,6 +1770,338 @@ class DamageCalculator:
         if stage_change < 0 and from_opponent:
             return 0
         return stage_change
+
+    # Shell Armor: Attacks landed on the Pokémon will never be critical hits.
+    def shell_armor_ability_attacker(self):
+        if "shell-armor" not in self.attacker_abilities:
+            return self.critical_hit_roll()
+        return 1
+    def shell_armor_ability_defender(self):
+        if "shell-armor" not in self.defender_abilities:
+            return self.critical_hit_roll()
+        return 1
+
+    # Tangled Feet: Moves aimed at the Pokémon are half as accurate while it's confused.
+    def tangled_feet_ability_attacker(self, confused):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if "tangled-feet" not in self.attacker_abilities or not confused:
+            return accuracy
+        return accuracy * 0.5
+    def tangled_feet_ability_defender(self, confused):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if "tangled-feet" not in self.defender_abilities or not confused:
+            return accuracy
+        return accuracy * 0.5
+
+    # Motor Drive: Electric-type moves don't affect the Pokémon. Instead they raise its Speed by 1 stage.
+    def motor_drive_ability_attacker(self):
+        if "motor-drive" not in self.attacker_abilities or self.move_type != "electric":
+            return self.move_power, 0
+        return 0, 1
+    def motor_drive_ability_defender(self):
+        if "motor-drive" not in self.defender_abilities or self.move_type != "electric":
+            return self.move_power, 0
+        return 0, 1
+
+    # Rivalry: The Pokémon's moves do 25% more damage to the same gender and 25% less to the opposite gender.
+    def rivalry_ability_attacker(self, attacker_gender, defender_gender):
+        if "rivalry" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if attacker_gender is None or defender_gender is None:
+            return self.move_power
+        if attacker_gender == defender_gender:
+            return self.move_power * 1.25
+        return self.move_power * 0.75
+    def rivalry_ability_defender(self, attacker_gender, defender_gender):
+        if "rivalry" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if attacker_gender is None or defender_gender is None:
+            return self.move_power
+        if attacker_gender == defender_gender:
+            return self.move_power * 1.25
+        return self.move_power * 0.75
+
+    # Steadfast: The Pokémon's Speed goes up 1 stage when it flinches. Returns the Speed stage change.
+    def steadfast_ability_attacker(self, flinched):
+        if "steadfast" not in self.attacker_abilities or not flinched:
+            return 0
+        return 1
+    def steadfast_ability_defender(self, flinched):
+        if "steadfast" not in self.defender_abilities or not flinched:
+            return 0
+        return 1
+
+    # Snow Cloak: In snow, evasion goes up 25%, so moves aimed at it hit with 80% of their accuracy.
+    def snow_cloak_ability_attacker(self):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if "snow-cloak" not in self.attacker_abilities or self.current_weather() not in ("snow", "hail"):
+            return accuracy
+        return accuracy * 0.8
+    def snow_cloak_ability_defender(self):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if "snow-cloak" not in self.defender_abilities or self.current_weather() not in ("snow", "hail"):
+            return accuracy
+        return accuracy * 0.8
+
+    # Gluttony: The Pokémon eats Berries that work at 1/4 HP when it's at 1/2 HP instead. Returns the HP fraction the Berry works at.
+    def gluttony_ability_attacker(self, berry_threshold):
+        if "gluttony" not in self.attacker_abilities or berry_threshold != 0.25:
+            return berry_threshold
+        return 0.5
+    def gluttony_ability_defender(self, berry_threshold):
+        if "gluttony" not in self.defender_abilities or berry_threshold != 0.25:
+            return berry_threshold
+        return 0.5
+
+    # Anger Point: When the Pokémon takes a critical hit, its Attack goes up to the max (+6). Returns its Attack stage after the hit.
+    def anger_point_ability_attacker(self, attack_stage, critical_hit):
+        if "anger-point" not in self.attacker_abilities or not critical_hit:
+            return attack_stage
+        return 6
+    def anger_point_ability_defender(self, attack_stage, critical_hit):
+        if "anger-point" not in self.defender_abilities or not critical_hit:
+            return attack_stage
+        return 6
+
+    # Unburden: Doubles the Pokémon's Speed after its held item is used up or lost.
+    def unburden_ability_attacker(self, item_lost):
+        if "unburden" not in self.attacker_abilities or not item_lost:
+            return self.attacker.stats["speed"]
+        return self.attacker.stats["speed"] * 2
+    def unburden_ability_defender(self, item_lost):
+        if "unburden" not in self.defender_abilities or not item_lost:
+            return self.defender.stats["speed"]
+        return self.defender.stats["speed"] * 2
+
+    # Heatproof: Halves the damage the Pokémon takes from Fire-type moves.
+    def heatproof_ability_attacker(self):
+        if "heatproof" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "fire":
+            return self.move_power * 0.5
+        return self.move_power
+    def heatproof_ability_defender(self):
+        if "heatproof" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "fire":
+            return self.move_power * 0.5
+        return self.move_power
+
+    # Heatproof: Halves the damage the Pokémon takes from its burn. Returns the burn dmg as a fraction of its max HP.
+    def heatproof_burn_damage_attacker(self):
+        if self.status_attacker != "burn":
+            return 0
+        if "heatproof" in self.attacker_abilities:
+            return STATUS_EFFECTS["burn"]["self_inflicted_dmg"] / 2
+        return STATUS_EFFECTS["burn"]["self_inflicted_dmg"]
+    def heatproof_burn_damage_defender(self):
+        if self.status_defender != "burn":
+            return 0
+        if "heatproof" in self.defender_abilities:
+            return STATUS_EFFECTS["burn"]["self_inflicted_dmg"] / 2
+        return STATUS_EFFECTS["burn"]["self_inflicted_dmg"]
+
+    # Simple: Doubles the Pokémon's stat changes. Returns the stage change that actually happens.
+    def simple_ability_attacker(self, stage_change):
+        if "simple" not in self.attacker_abilities:
+            return stage_change
+        return stage_change * 2
+    def simple_ability_defender(self, stage_change):
+        if "simple" not in self.defender_abilities:
+            return stage_change
+        return stage_change * 2
+
+    # Dry Skin: Water-type moves heal the Pokémon 1/4 of its max HP instead of hurting it, but Fire-type moves do 25% more damage.
+    def dry_skin_ability_attacker(self):
+        if "dry-skin" not in self.attacker_abilities:
+            return self.move_power, 0
+        if self.move_type == "water":
+            if self.weather_move_power() == 0:
+                return 0, 0
+            return 0, 0.25
+        if self.move_type == "fire" and self.move_power:
+            return self.move_power * 1.25, 0
+        return self.move_power, 0
+    def dry_skin_ability_defender(self):
+        if "dry-skin" not in self.defender_abilities:
+            return self.move_power, 0
+        if self.move_type == "water":
+            if self.weather_move_power() == 0:
+                return 0, 0
+            return 0, 0.25
+        if self.move_type == "fire" and self.move_power:
+            return self.move_power * 1.25, 0
+        return self.move_power, 0
+
+    # Dry Skin: Heals 1/8 of the Pokémon's max HP each turn in rain, but it loses 1/8 in harsh sunlight. Returns the HP change as a fraction of its max HP.
+    def dry_skin_weather_attacker(self):
+        if "dry-skin" not in self.attacker_abilities:
+            return 0
+        if self.current_weather() in ("rain", "heavy-rain"):
+            return 0.125
+        if self.current_weather() in ("sun", "extreme-sun"):
+            return -0.125
+        return 0
+    def dry_skin_weather_defender(self):
+        if "dry-skin" not in self.defender_abilities:
+            return 0
+        if self.current_weather() in ("rain", "heavy-rain"):
+            return 0.125
+        if self.current_weather() in ("sun", "extreme-sun"):
+            return -0.125
+        return 0
+
+    # Download: When the Pokémon enters battle, it raises Sp. Atk if the opponent's Defense is higher, or Attack if its Sp. Def is higher. Returns the stat that goes up 1 stage.
+    def download_ability_attacker(self):
+        if "download" not in self.attacker_abilities:
+            return None
+        if self.defender.stats["defense"] >= self.defender.stats["special-defense"]:
+            return "special-attack"
+        return "attack"
+    def download_ability_defender(self):
+        if "download" not in self.defender_abilities:
+            return None
+        if self.attacker.stats["defense"] >= self.attacker.stats["special-defense"]:
+            return "special-attack"
+        return "attack"
+
+    # Iron Fist: Boosts the power of the Pokémon's punching moves by 20%.
+    def iron_fist_ability_attacker(self):
+        if "iron-fist" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.punch_move():
+            return self.move_power * 1.2
+        return self.move_power
+    def iron_fist_ability_defender(self):
+        if "iron-fist" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.punch_move():
+            return self.move_power * 1.2
+        return self.move_power
+
+    # Poison Heal: If the Pokémon is poisoned, it heals 1/8 of its max HP each turn instead of losing HP.
+    def poison_heal_ability_attacker(self):
+        if "poison-heal" not in self.attacker_abilities:
+            return 0
+        if self.status_attacker == "poison" or self.status_attacker == "badly-poison":
+            return 0.125
+        return 0
+    def poison_heal_ability_defender(self):
+        if "poison-heal" not in self.defender_abilities:
+            return 0
+        if self.status_defender == "poison" or self.status_defender == "badly-poison":
+            return 0.125
+        return 0
+
+    # Adaptability: The Pokémon's same-type attack bonus (STAB) is 2x instead of 1.5x. Returns the STAB multiplier.
+    def adaptability_ability_attacker(self):
+        if self.move_type not in self.attacker.types:
+            return 1
+        if "adaptability" in self.attacker_abilities:
+            return 2
+        return 1.5
+    def adaptability_ability_defender(self):
+        if self.move_type not in self.defender.types:
+            return 1
+        if "adaptability" in self.defender_abilities:
+            return 2
+        return 1.5
+
+    # Skill Link: The Pokémon's multi-hit moves always hit the max number of times. Returns how many times the move hits.
+    def skill_link_ability_attacker(self):
+        if self.move_data.meta is None or not self.move_data.meta.get("max_hits"):
+            return 1
+        min_hits = self.move_data.meta.get("min_hits") or 1
+        max_hits = self.move_data.meta["max_hits"]
+        if "skill-link" in self.attacker_abilities or min_hits == max_hits:
+            return max_hits
+        roll = random.random()
+        if roll < 0.35:
+            return 2
+        elif roll < 0.70:
+            return 3
+        elif roll < 0.85:
+            return 4
+        return 5
+    def skill_link_ability_defender(self):
+        if self.move_data.meta is None or not self.move_data.meta.get("max_hits"):
+            return 1
+        min_hits = self.move_data.meta.get("min_hits") or 1
+        max_hits = self.move_data.meta["max_hits"]
+        if "skill-link" in self.defender_abilities or min_hits == max_hits:
+            return max_hits
+        roll = random.random()
+        if roll < 0.35:
+            return 2
+        elif roll < 0.70:
+            return 3
+        elif roll < 0.85:
+            return 4
+        return 5
+
+    # Hydration: Cures the Pokémon's status at the end of each turn in rain.
+    def hydration_ability_attacker(self):
+        if "hydration" not in self.attacker_abilities:
+            return self.status_attacker
+        if self.current_weather() in ("rain", "heavy-rain"):
+            return None
+        return self.status_attacker
+    def hydration_ability_defender(self):
+        if "hydration" not in self.defender_abilities:
+            return self.status_defender
+        if self.current_weather() in ("rain", "heavy-rain"):
+            return None
+        return self.status_defender
+
+    # Solar Power: Boosts the Pokémon's Sp. Atk by 50% in harsh sunlight.
+    def solar_power_ability_attacker(self):
+        if "solar-power" not in self.attacker_abilities:
+            return self.attacker.stats["special-attack"]
+        if self.current_weather() in ("sun", "extreme-sun"):
+            return self.attacker.stats["special-attack"] * 1.5
+        return self.attacker.stats["special-attack"]
+    def solar_power_ability_defender(self):
+        if "solar-power" not in self.defender_abilities:
+            return self.defender.stats["special-attack"]
+        if self.current_weather() in ("sun", "extreme-sun"):
+            return self.defender.stats["special-attack"] * 1.5
+        return self.defender.stats["special-attack"]
+
+    # Solar Power: The Pokémon loses 1/8 of its max HP each turn in harsh sunlight.
+    def solar_power_damage_attacker(self):
+        if "solar-power" not in self.attacker_abilities:
+            return 0
+        if self.current_weather() in ("sun", "extreme-sun"):
+            return 0.125
+        return 0
+    def solar_power_damage_defender(self):
+        if "solar-power" not in self.defender_abilities:
+            return 0
+        if self.current_weather() in ("sun", "extreme-sun"):
+            return 0.125
+        return 0
+
+    # Normalize: All of the Pokémon's moves become Normal type and do 20% more damage. Returns the move's type and power.
+    def normalize_ability_attacker(self):
+        if "normalize" not in self.attacker_abilities or self.move_name in NORMALIZE_EXCEPTIONS:
+            return self.move_type, self.move_power
+        if not self.move_power:
+            return "normal", self.move_power
+        return "normal", self.move_power * 1.2
+    def normalize_ability_defender(self):
+        if "normalize" not in self.defender_abilities or self.move_name in NORMALIZE_EXCEPTIONS:
+            return self.move_type, self.move_power
+        if not self.move_power:
+            return "normal", self.move_power
+        return "normal", self.move_power * 1.2
 
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
