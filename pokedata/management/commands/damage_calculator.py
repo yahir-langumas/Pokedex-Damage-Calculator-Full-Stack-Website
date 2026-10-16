@@ -261,6 +261,63 @@ KLUTZ_EXCEPTIONS = {
     "macho-brace", "power-anklet", "power-band", "power-belt", "power-bracer", "power-lens", "power-weight",
 }
 
+# Recoil and crash moves Reckless boosts.
+RECKLESS_MOVES = {
+    "axe-kick", "brave-bird", "double-edge", "flare-blitz", "head-charge", "head-smash",
+    "high-jump-kick", "jump-kick", "light-of-ruin", "submission", "supercell-slam",
+    "take-down", "volt-tackle", "wave-crash", "wild-charge", "wood-hammer",
+}
+
+# Moves with added effects that Sheer Force boosts.
+SHEER_FORCE_MOVES = {
+    "acid", "acid-spray", "air-slash", "alluring-voice", "anchor-shot", "ancient-power",
+    "apple-acid", "aqua-step", "astonish", "aura-wheel", "aurora-beam", "axe-kick",
+    "barb-barrage", "bite", "bitter-malice", "blaze-kick", "blazing-torque",
+    "bleakwind-storm", "blizzard", "blue-flare", "body-slam", "bolt-strike",
+    "bone-club", "bounce", "breaking-swipe", "bubble", "bubble-beam", "bug-buzz",
+    "bulldoze", "burning-jealousy", "ceaseless-edge", "charge-beam", "chatter",
+    "chilling-water", "combat-torque", "confusion", "constrict", "cross-poison",
+    "crunch", "crush-claw", "dark-pulse", "diamond-storm", "dire-claw", "discharge",
+    "dizzy-punch", "double-iron-bash", "dragon-breath", "dragon-rush", "drum-beating",
+    "dynamic-punch", "earth-power", "eerie-spell", "electro-shot", "electroweb",
+    "ember", "energy-ball", "esper-wing", "extrasensory", "fake-out", "fiery-dance",
+    "fiery-wrath", "fire-blast", "fire-fang", "fire-lash", "fire-punch", "flame-charge",
+    "flame-wheel", "flamethrower", "flare-blitz", "flash-cannon", "focus-blast",
+    "force-palm", "freeze-dry", "freeze-shock", "freezing-glare", "glaciate",
+    "grav-apple", "gunk-shot", "headbutt", "heart-stamp", "heat-wave", "hurricane",
+    "hyper-fang", "ice-beam", "ice-burn", "ice-fang", "ice-punch", "icicle-crash",
+    "icy-wind", "infernal-parade", "inferno", "iron-head", "iron-tail", "lava-plume",
+    "leaf-tornado", "lick", "liquidation", "low-sweep", "lumina-crash", "lunge",
+    "luster-purge", "magical-torque", "malignant-chain", "matcha-gotcha", "metal-claw",
+    "meteor-mash", "mirror-shot", "mist-ball", "moonblast", "mortal-spin",
+    "mountain-gale", "mud-bomb", "mud-shot", "mud-slap", "muddy-water", "mystical-fire",
+    "mystical-power", "needle-arm", "night-daze", "noxious-torque", "nuzzle",
+    "octazooka", "ominous-wind", "order-up", "play-rough", "poison-fang", "poison-jab",
+    "poison-sting", "poison-tail", "pounce", "powder-snow", "power-up-punch", "psybeam",
+    "psychic", "psychic-noise", "psyshield-bash", "pyro-ball", "rapid-spin",
+    "razor-shell", "relic-song", "rock-climb", "rock-slide", "rock-smash", "rock-tomb",
+    "rolling-kick", "sacred-fire", "salt-cure", "sandsear-storm", "scald",
+    "scorching-sands", "searing-shot", "secret-power", "seed-flare", "shadow-ball",
+    "shadow-bone", "shell-side-arm", "signal-beam", "silver-wind", "skitter-smack",
+    "sky-attack", "sludge", "sludge-bomb", "sludge-wave", "smog", "snarl", "snore",
+    "spark", "sparkling-aria", "spirit-break", "spirit-shackle", "springtide-storm",
+    "steam-eruption", "steamroller", "steel-wing", "stomp", "stone-axe",
+    "strange-steam", "struggle-bug", "syrup-bomb", "throat-chop", "thunder",
+    "thunder-fang", "thunder-punch", "thunder-shock", "thunderbolt", "thunderous-kick",
+    "torch-song", "trailblaze", "tri-attack", "triple-arrows", "trop-kick", "twineedle",
+    "twister", "upper-hand", "volt-tackle", "water-pulse", "waterfall", "wicked-torque",
+    "wildbolt-storm", "zap-cannon", "zen-headbutt", "zing-zap",
+}
+
+# The type each Plate gives Arceus with Multitype.
+PLATE_TYPES = {
+    "draco-plate": "dragon", "dread-plate": "dark", "earth-plate": "ground", "fist-plate": "fighting",
+    "flame-plate": "fire", "icicle-plate": "ice", "insect-plate": "bug", "iron-plate": "steel",
+    "meadow-plate": "grass", "mind-plate": "psychic", "pixie-plate": "fairy", "sky-plate": "flying",
+    "splash-plate": "water", "spooky-plate": "ghost", "stone-plate": "rock", "toxic-plate": "poison",
+    "zap-plate": "electric",
+}
+
 
 class DamageCalculator:
     # attacker_ability and defender_ability = the ability each Pokémon is using. If it's not given, it uses the Pokémon's first ability.
@@ -2323,6 +2380,291 @@ class DamageCalculator:
         if "slow-start" not in self.defender_abilities or turns_on_field >= 5:
             return attack, speed
         return attack * 0.5, speed * 0.5
+
+    # Scrappy: The Pokémon's Normal and Fighting moves can hit Ghost types. Returns the type effectiveness against the target.
+    # Scrappy also blocks Intimidate, which is handled in INTIMIDATE_IMMUNITY_ABILITIES.
+    def scrappy_ability_attacker(self):
+        if "scrappy" not in self.attacker_abilities or self.move_type not in ("normal", "fighting"):
+            return self.type_effectiveness_defender()
+        removes_flying_weaknesses = self.weather_effects().get("removes_flying_weaknesses", False)
+        multiplier = 1
+        for type_name, type_data in zip(self.defender.types, self.defender_types_data):
+            if type_name == "ghost":
+                continue
+            if self.move_type in type_data["double_damage_from"]:
+                if not (removes_flying_weaknesses and type_name == "flying"):
+                    multiplier *= 2
+            elif self.move_type in type_data["half_damage_from"]:
+                multiplier *= 0.5
+            elif self.move_type in type_data["no_damage_from"]:
+                multiplier *= 0
+        return multiplier
+    def scrappy_ability_defender(self):
+        if "scrappy" not in self.defender_abilities or self.move_type not in ("normal", "fighting"):
+            return self.type_effectiveness_attacker()
+        removes_flying_weaknesses = self.weather_effects().get("removes_flying_weaknesses", False)
+        multiplier = 1
+        for type_name, type_data in zip(self.attacker.types, self.attacker_types_data):
+            if type_name == "ghost":
+                continue
+            if self.move_type in type_data["double_damage_from"]:
+                if not (removes_flying_weaknesses and type_name == "flying"):
+                    multiplier *= 2
+            elif self.move_type in type_data["half_damage_from"]:
+                multiplier *= 0.5
+            elif self.move_type in type_data["no_damage_from"]:
+                multiplier *= 0
+        return multiplier
+
+    # Storm Drain: Water moves don't affect the Pokémon. Instead they raise its Sp. Atk by 1 stage.
+    def storm_drain_ability_attacker(self):
+        if "storm-drain" not in self.attacker_abilities or self.move_type != "water":
+            return self.move_power, 0
+        if self.weather_move_power() == 0:
+            return 0, 0
+        return 0, 1
+    def storm_drain_ability_defender(self):
+        if "storm-drain" not in self.defender_abilities or self.move_type != "water":
+            return self.move_power, 0
+        if self.weather_move_power() == 0:
+            return 0, 0
+        return 0, 1
+
+    # Ice Body: Heals 1/16 of the Pokémon's max HP at the end of each turn in snow.
+    def ice_body_ability_attacker(self):
+        if "ice-body" not in self.attacker_abilities:
+            return 0
+        if self.current_weather() in ("snow", "hail"):
+            return 0.0625
+        return 0
+    def ice_body_ability_defender(self):
+        if "ice-body" not in self.defender_abilities:
+            return 0
+        if self.current_weather() in ("snow", "hail"):
+            return 0.0625
+        return 0
+
+    # Snow Warning: Summons snow for 5 turns when the Pokémon enters battle.
+    def snow_warning_ability_attacker(self):
+        if "snow-warning" not in self.attacker_abilities:
+            return self.weather
+        if self.weather == "snow" or WEATHER_EFFECTS.get(self.weather, {}).get("primal"):
+            return self.weather
+        self.weather = "snow"
+        self.weather_turns = WEATHER_EFFECTS["snow"]["turns"]
+        return self.weather
+    def snow_warning_ability_defender(self):
+        if "snow-warning" not in self.defender_abilities:
+            return self.weather
+        if self.weather == "snow" or WEATHER_EFFECTS.get(self.weather, {}).get("primal"):
+            return self.weather
+        self.weather = "snow"
+        self.weather_turns = WEATHER_EFFECTS["snow"]["turns"]
+        return self.weather
+
+    # Honey Gather: The Pokémon may pick up Honey after a battle.
+    # This ability currently has no effect on the dmg calc and will be implemented at a later date.
+    # def honey_gather_ability_attacker(self):
+    #     return "honey-gather" in self.attacker_abilities
+    # def honey_gather_ability_defender(self):
+    #     return "honey-gather" in self.defender_abilities
+
+    # Frisk: When the Pokémon enters battle, it checks the opposing Pokémon's held item. Returns the item it finds.
+    def frisk_ability_attacker(self, opponent_item):
+        if "frisk" not in self.attacker_abilities:
+            return None
+        return opponent_item
+    def frisk_ability_defender(self, opponent_item):
+        if "frisk" not in self.defender_abilities:
+            return None
+        return opponent_item
+
+    # Reckless: Boosts the power of the Pokémon's recoil and crash moves by 20%.
+    def reckless_ability_attacker(self):
+        if "reckless" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.move_name in RECKLESS_MOVES:
+            return self.move_power * 1.2
+        return self.move_power
+    def reckless_ability_defender(self):
+        if "reckless" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.move_name in RECKLESS_MOVES:
+            return self.move_power * 1.2
+        return self.move_power
+
+    # Multitype: Arceus's type changes to match the Plate it's holding. Returns the Pokémon's types.
+    def multitype_ability_attacker(self, held_item):
+        if "multitype" not in self.attacker_abilities:
+            return self.attacker.types
+        return [PLATE_TYPES.get(held_item, "normal")]
+    def multitype_ability_defender(self, held_item):
+        if "multitype" not in self.defender_abilities:
+            return self.defender.types
+        return [PLATE_TYPES.get(held_item, "normal")]
+
+    # Flower Gift: In harsh sunlight, Cherrim's Attack and Sp. Def go up by 50%. Returns its Attack and Sp. Def.
+    def flower_gift_ability_attacker(self):
+        attack = self.attacker.stats["attack"]
+        special_defense = self.attacker.stats["special-defense"]
+        if "flower-gift" not in self.attacker_abilities or not self.attacker.name.startswith("cherrim"):
+            return attack, special_defense
+        if self.current_weather() in ("sun", "extreme-sun"):
+            return attack * 1.5, special_defense * 1.5
+        return attack, special_defense
+    def flower_gift_ability_defender(self):
+        attack = self.defender.stats["attack"]
+        special_defense = self.defender.stats["special-defense"]
+        if "flower-gift" not in self.defender_abilities or not self.defender.name.startswith("cherrim"):
+            return attack, special_defense
+        if self.current_weather() in ("sun", "extreme-sun"):
+            return attack * 1.5, special_defense * 1.5
+        return attack, special_defense
+        # Will add the boost for allies later for doubles.
+
+    # Bad Dreams: The opposing Pokémon loses 1/8 of its max HP each turn while it's asleep.
+    def bad_dreams_ability_attacker(self):
+        if "bad-dreams" not in self.attacker_abilities:
+            return 0
+        if self.status_defender != "sleep" and "comatose" not in self.defender_abilities:
+            return 0
+        if "magic-guard" in self.defender_abilities:
+            return 0
+        return 0.125
+    def bad_dreams_ability_defender(self):
+        if "bad-dreams" not in self.defender_abilities:
+            return 0
+        if self.status_attacker != "sleep" and "comatose" not in self.attacker_abilities:
+            return 0
+        if "magic-guard" in self.attacker_abilities:
+            return 0
+        return 0.125
+
+    # Pickpocket: When the Pokémon is hit by a contact move, it steals the attacker's item if it isn't holding one. Returns the item it's holding after.
+    def pickpocket_ability_attacker(self, held_item, opponent_item):
+        if "pickpocket" not in self.attacker_abilities or held_item or not self.contact_move():
+            return held_item
+        if "sticky-hold" in self.defender_abilities:
+            return held_item
+        return opponent_item
+    def pickpocket_ability_defender(self, held_item, opponent_item):
+        if "pickpocket" not in self.defender_abilities or held_item or not self.contact_move():
+            return held_item
+        if "sticky-hold" in self.attacker_abilities:
+            return held_item
+        return opponent_item
+
+    # Sheer Force: Boosts the power of the Pokémon's moves with added effects by 30%.
+    def sheer_force_ability_attacker(self):
+        if "sheer-force" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.move_name in SHEER_FORCE_MOVES:
+            return self.move_power * 1.3
+        return self.move_power
+    def sheer_force_ability_defender(self):
+        if "sheer-force" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.move_name in SHEER_FORCE_MOVES:
+            return self.move_power * 1.3
+        return self.move_power
+
+    # Sheer Force: The move's added effects (status, flinch, stat changes) don't happen. Returns True if they're removed.
+    def sheer_force_effects_attacker(self):
+        return "sheer-force" in self.attacker_abilities and self.move_name in SHEER_FORCE_MOVES
+    def sheer_force_effects_defender(self):
+        return "sheer-force" in self.defender_abilities and self.move_name in SHEER_FORCE_MOVES
+
+    # Contrary: The Pokémon's stat changes are reversed. Returns the stage change that actually happens.
+    def contrary_ability_attacker(self, stage_change):
+        if "contrary" not in self.attacker_abilities:
+            return stage_change
+        return -stage_change
+    def contrary_ability_defender(self, stage_change):
+        if "contrary" not in self.defender_abilities:
+            return stage_change
+        return -stage_change
+
+    # Unnerve: The opposing Pokémon can't eat Berries. Returns the opposing Pokémon's item that still works.
+    def unnerve_ability_attacker(self, opponent_item):
+        if "unnerve" not in self.attacker_abilities or not opponent_item or not opponent_item.endswith("-berry"):
+            return opponent_item
+        return None
+    def unnerve_ability_defender(self, opponent_item):
+        if "unnerve" not in self.defender_abilities or not opponent_item or not opponent_item.endswith("-berry"):
+            return opponent_item
+        return None
+
+    # Defiant: When an opposing Pokémon lowers one of its stats, its Attack goes up 2 stages. Returns the Attack stage change.
+    def defiant_ability_attacker(self, stage_change, from_opponent=True):
+        if "defiant" not in self.attacker_abilities or stage_change >= 0 or not from_opponent:
+            return 0
+        return 2
+    def defiant_ability_defender(self, stage_change, from_opponent=True):
+        if "defiant" not in self.defender_abilities or stage_change >= 0 or not from_opponent:
+            return 0
+        return 2
+
+    # Defeatist: The Pokémon's Attack and Sp. Atk are halved when its HP is 1/2 or less. Returns its Attack and Sp. Atk.
+    def defeatist_ability_attacker(self, current_hp, max_hp):
+        attack = self.attacker.stats["attack"]
+        special_attack = self.attacker.stats["special-attack"]
+        if "defeatist" not in self.attacker_abilities or current_hp > max_hp / 2:
+            return attack, special_attack
+        return attack * 0.5, special_attack * 0.5
+    def defeatist_ability_defender(self, current_hp, max_hp):
+        attack = self.defender.stats["attack"]
+        special_attack = self.defender.stats["special-attack"]
+        if "defeatist" not in self.defender_abilities or current_hp > max_hp / 2:
+            return attack, special_attack
+        return attack * 0.5, special_attack * 0.5
+
+    # Cursed Body: When the Pokémon is hit by a move, there's a 30% chance that move gets disabled. Returns True if the move gets disabled.
+    def cursed_body_ability_attacker(self):
+        if "cursed-body" not in self.attacker_abilities or self.status_move():
+            return False
+        if self.move_name in ("struggle", "future-sight", "doom-desire"):
+            return False
+        return random.random() < 0.30
+    def cursed_body_ability_defender(self):
+        if "cursed-body" not in self.defender_abilities or self.status_move():
+            return False
+        if self.move_name in ("struggle", "future-sight", "doom-desire"):
+            return False
+        return random.random() < 0.30
+
+    # Healer: Each turn, there's a 30% chance the Pokémon cures its ally's status. ally_status = the ally's status. Returns the ally's status after.
+    def healer_ability_attacker(self, ally_status=None):
+        if "healer" not in self.attacker_abilities or not ally_status:
+            return ally_status
+        if random.random() < 0.30:
+            return None
+        return ally_status
+    def healer_ability_defender(self, ally_status=None):
+        if "healer" not in self.defender_abilities or not ally_status:
+            return ally_status
+        if random.random() < 0.30:
+            return None
+        return ally_status
+
+    # Friend Guard: The Pokémon's allies take 25% less damage. ally_abilities = the abilities of the ally next to the Pokémon getting hit.
+    def friend_guard_ability_attacker(self, ally_abilities=None):
+        if not ally_abilities or "friend-guard" not in ally_abilities or not self.move_power:
+            return self.move_power
+        return self.move_power * 0.75
+    def friend_guard_ability_defender(self, ally_abilities=None):
+        if not ally_abilities or "friend-guard" not in ally_abilities or not self.move_power:
+            return self.move_power
+        return self.move_power * 0.75
+
+    # Weak Armor: When the Pokémon is hit by a physical move, its Defense goes down 1 stage and its Speed goes up 2 stages. Returns the Defense and Speed stage changes.
+    def weak_armor_ability_attacker(self):
+        if "weak-armor" not in self.attacker_abilities or self.move_data.damage_class != "physical":
+            return 0, 0
+        return -1, 2
+    def weak_armor_ability_defender(self):
+        if "weak-armor" not in self.defender_abilities or self.move_data.damage_class != "physical":
+            return 0, 0
+        return -1, 2
 
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
