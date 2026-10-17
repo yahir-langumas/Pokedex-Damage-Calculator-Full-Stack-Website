@@ -318,6 +318,13 @@ PLATE_TYPES = {
     "zap-plate": "electric",
 }
 
+# Abilities that can't be replaced or suppressed (Mummy can't change these).
+CANT_SUPPRESS_ABILITIES = {
+    "as-one-glastrier", "as-one-spectrier", "battle-bond", "comatose", "disguise", "gulp-missile",
+    "ice-face", "multitype", "power-construct", "rks-system", "schooling", "shields-down",
+    "stance-change", "tera-shift", "zen-mode", "zero-to-hero",
+}
+
 
 class DamageCalculator:
     # attacker_ability and defender_ability = the ability each Pokémon is using. If it's not given, it uses the Pokémon's first ability.
@@ -2665,6 +2672,293 @@ class DamageCalculator:
         if "weak-armor" not in self.defender_abilities or self.move_data.damage_class != "physical":
             return 0, 0
         return -1, 2
+
+    # Heavy Metal: Doubles the Pokémon's weight. Returns its weight.
+    def heavy_metal_ability_attacker(self):
+        if "heavy-metal" not in self.attacker_abilities:
+            return self.attacker.weight
+        return self.attacker.weight * 2
+    def heavy_metal_ability_defender(self):
+        if "heavy-metal" not in self.defender_abilities:
+            return self.defender.weight
+        return self.defender.weight * 2
+
+    # Light Metal: Halves the Pokémon's weight. Returns its weight.
+    def light_metal_ability_attacker(self):
+        if "light-metal" not in self.attacker_abilities:
+            return self.attacker.weight
+        return max(1, self.attacker.weight // 2)
+    def light_metal_ability_defender(self):
+        if "light-metal" not in self.defender_abilities:
+            return self.defender.weight
+        return max(1, self.defender.weight // 2)
+
+    # Multiscale: Halves the damage the Pokémon takes when its HP is full.
+    def multiscale_ability_attacker(self, current_hp, max_hp):
+        if "multiscale" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if current_hp >= max_hp:
+            return self.move_power * 0.5
+        return self.move_power
+    def multiscale_ability_defender(self, current_hp, max_hp):
+        if "multiscale" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if current_hp >= max_hp:
+            return self.move_power * 0.5
+        return self.move_power
+
+    # Harvest: At the end of each turn, there's a 50% chance the Pokémon gets back the Berry it used. It always works in harsh sunlight. Returns the item it's holding after.
+    def harvest_ability_attacker(self, held_item, used_item):
+        if "harvest" not in self.attacker_abilities or held_item or not used_item or not used_item.endswith("-berry"):
+            return held_item
+        if self.current_weather() in ("sun", "extreme-sun") or random.random() < 0.5:
+            return used_item
+        return held_item
+    def harvest_ability_defender(self, held_item, used_item):
+        if "harvest" not in self.defender_abilities or held_item or not used_item or not used_item.endswith("-berry"):
+            return held_item
+        if self.current_weather() in ("sun", "extreme-sun") or random.random() < 0.5:
+            return used_item
+        return held_item
+
+    # Telepathy: The Pokémon doesn't get hit by its ally's damaging moves. from_ally = True if the move came from its ally.
+    def telepathy_ability_attacker(self, from_ally=False):
+        if "telepathy" not in self.attacker_abilities or not from_ally or self.status_move():
+            return self.move_power
+        return 0
+    def telepathy_ability_defender(self, from_ally=False):
+        if "telepathy" not in self.defender_abilities or not from_ally or self.status_move():
+            return self.move_power
+        return 0
+
+    # Moody: At the end of each turn, one random stat goes up 2 stages and a different one goes down 1 stage. Returns the stat that goes up and the stat that goes down.
+    # stat_stages = the Pokémon's current stat stages. A stat already at +6 can't go up and a stat at -6 can't go down.
+    def moody_ability_attacker(self, stat_stages=None):
+        if "moody" not in self.attacker_abilities:
+            return None, None
+        stat_stages = stat_stages or {}
+        stats = ["attack", "defense", "special-attack", "special-defense", "speed"]
+        can_raise = [stat for stat in stats if stat_stages.get(stat, 0) < 6]
+        raised = random.choice(can_raise) if can_raise else None
+        can_lower = [stat for stat in stats if stat_stages.get(stat, 0) > -6 and stat != raised]
+        lowered = random.choice(can_lower) if can_lower else None
+        return raised, lowered
+    def moody_ability_defender(self, stat_stages=None):
+        if "moody" not in self.defender_abilities:
+            return None, None
+        stat_stages = stat_stages or {}
+        stats = ["attack", "defense", "special-attack", "special-defense", "speed"]
+        can_raise = [stat for stat in stats if stat_stages.get(stat, 0) < 6]
+        raised = random.choice(can_raise) if can_raise else None
+        can_lower = [stat for stat in stats if stat_stages.get(stat, 0) > -6 and stat != raised]
+        lowered = random.choice(can_lower) if can_lower else None
+        return raised, lowered
+
+    # Overcoat: The Pokémon is immune to powder and spore moves. Returns True if the move is blocked.
+    # Overcoat's immunity to sandstorm and hail dmg is in WEATHER_EFFECTS.
+    def overcoat_ability_attacker(self):
+        if "overcoat" not in self.attacker_abilities:
+            return False
+        return self.powder_and_spore_move() and self.move_name != "rage-powder"
+    def overcoat_ability_defender(self):
+        if "overcoat" not in self.defender_abilities:
+            return False
+        return self.powder_and_spore_move() and self.move_name != "rage-powder"
+
+    # Poison Touch: The Pokémon's contact moves have a 30% chance of poisoning the target. Returns the status that actually sticks.
+    def poison_touch_ability_attacker(self):
+        if "poison-touch" not in self.attacker_abilities or not self.contact_move():
+            return self.status_defender
+        if "shield-dust" in self.defender_abilities:
+            return self.status_defender
+        if self.status_effects_defender() or self.status_immune_defender("poison"):
+            return self.status_defender
+        if random.random() < 0.30:
+            return "poison"
+        return self.status_defender
+    def poison_touch_ability_defender(self):
+        if "poison-touch" not in self.defender_abilities or not self.contact_move():
+            return self.status_attacker
+        if "shield-dust" in self.attacker_abilities:
+            return self.status_attacker
+        if self.status_effects_attacker() or self.status_immune_attacker("poison"):
+            return self.status_attacker
+        if random.random() < 0.30:
+            return "poison"
+        return self.status_attacker
+
+    # Regenerator: The Pokémon heals 1/3 of its max HP when it switches out.
+    def regenerator_ability_attacker(self):
+        if "regenerator" not in self.attacker_abilities:
+            return 0
+        return 1 / 3
+    def regenerator_ability_defender(self):
+        if "regenerator" not in self.defender_abilities:
+            return 0
+        return 1 / 3
+
+    # Big Pecks: Other Pokémon's moves and abilities can't lower this Pokémon's Defense.
+    # stat = the stat that's changing. Returns the stage change that actually happens.
+    def big_pecks_ability_attacker(self, stat, stage_change, from_opponent=True):
+        if "big-pecks" not in self.attacker_abilities:
+            return stage_change
+        if stat == "defense" and stage_change < 0 and from_opponent:
+            return 0
+        return stage_change
+    def big_pecks_ability_defender(self, stat, stage_change, from_opponent=True):
+        if "big-pecks" not in self.defender_abilities:
+            return stage_change
+        if stat == "defense" and stage_change < 0 and from_opponent:
+            return 0
+        return stage_change
+
+    # Sand Rush: Doubles the Pokémon's Speed in a sandstorm.
+    # Sand Rush's immunity to sandstorm dmg is in WEATHER_EFFECTS.
+    def sand_rush_ability_attacker(self):
+        if "sand-rush" not in self.attacker_abilities:
+            return self.attacker.stats["speed"]
+        if self.current_weather() == "sandstorm":
+            return self.attacker.stats["speed"] * 2
+        return self.attacker.stats["speed"]
+    def sand_rush_ability_defender(self):
+        if "sand-rush" not in self.defender_abilities:
+            return self.defender.stats["speed"]
+        if self.current_weather() == "sandstorm":
+            return self.defender.stats["speed"] * 2
+        return self.defender.stats["speed"]
+
+    # Wonder Skin: Status moves aimed at the Pokémon only have 50% accuracy. Returns the move's accuracy. None means the move never misses.
+    def wonder_skin_ability_attacker(self):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if "wonder-skin" not in self.attacker_abilities or not self.status_move():
+            return accuracy
+        return 50
+    def wonder_skin_ability_defender(self):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if "wonder-skin" not in self.defender_abilities or not self.status_move():
+            return accuracy
+        return 50
+
+    # Analytic: Boosts the power of the Pokémon's moves by 30% if it moves last. moves_last = True if it moves after the other Pokémon.
+    def analytic_ability_attacker(self, moves_last):
+        if "analytic" not in self.attacker_abilities or not self.move_power or not moves_last:
+            return self.move_power
+        return self.move_power * 1.3
+    def analytic_ability_defender(self, moves_last):
+        if "analytic" not in self.defender_abilities or not self.move_power or not moves_last:
+            return self.move_power
+        return self.move_power * 1.3
+
+    # Illusion: The Pokémon enters battle disguised as the last Pokémon in its party. The disguise breaks when it's hit by a damaging move.
+    # disguised_as = the name of the Pokémon it's disguised as. Returns the name the opponent sees after the move.
+    def illusion_ability_attacker(self, disguised_as=None):
+        if "illusion" not in self.attacker_abilities or not disguised_as:
+            return self.attacker.name
+        if not self.status_move() and self.type_effectiveness_attacker() > 0:
+            return self.attacker.name
+        return disguised_as
+    def illusion_ability_defender(self, disguised_as=None):
+        if "illusion" not in self.defender_abilities or not disguised_as:
+            return self.defender.name
+        if not self.status_move() and self.type_effectiveness_defender() > 0:
+            return self.defender.name
+        return disguised_as
+
+    # Imposter: When the Pokémon enters battle, it transforms into the opposing Pokémon and copies its types, stats (except HP) and ability. Returns its types, stats and abilities after.
+    def imposter_ability_attacker(self):
+        if "imposter" not in self.attacker_abilities:
+            return self.attacker.types, self.attacker.stats, self.attacker_abilities
+        stats = dict(self.defender.stats)
+        stats["hp"] = self.attacker.stats["hp"]
+        return self.defender.types, stats, self.defender_abilities
+    def imposter_ability_defender(self):
+        if "imposter" not in self.defender_abilities:
+            return self.defender.types, self.defender.stats, self.defender_abilities
+        stats = dict(self.attacker.stats)
+        stats["hp"] = self.defender.stats["hp"]
+        return self.attacker.types, stats, self.attacker_abilities
+
+    # Infiltrator: The Pokémon's moves ignore the target's Reflect, Light Screen and Aurora Veil. Returns the screen dmg multiplier.
+    # screen_active = True if a screen is up that weakens this move.
+    def infiltrator_ability_attacker(self, screen_active=False):
+        if not screen_active or self.status_move():
+            return 1
+        if "infiltrator" in self.attacker_abilities:
+            return 1
+        return 0.5
+    def infiltrator_ability_defender(self, screen_active=False):
+        if not screen_active or self.status_move():
+            return 1
+        if "infiltrator" in self.defender_abilities:
+            return 1
+        return 0.5
+        # Will add Substitute, Safeguard and Mist later once those moves are in.
+
+    # Mummy: When the Pokémon is hit by a contact move, the attacker's ability becomes Mummy. Returns the attacker's abilities after.
+    def mummy_ability_attacker(self):
+        if "mummy" not in self.attacker_abilities or not self.contact_move():
+            return self.defender_abilities
+        for ability in self.defender_abilities:
+            if ability in CANT_SUPPRESS_ABILITIES or ability == "mummy":
+                return self.defender_abilities
+        return ["mummy"]
+    def mummy_ability_defender(self):
+        if "mummy" not in self.defender_abilities or not self.contact_move():
+            return self.attacker_abilities
+        for ability in self.attacker_abilities:
+            if ability in CANT_SUPPRESS_ABILITIES or ability == "mummy":
+                return self.attacker_abilities
+        return ["mummy"]
+
+    # Moxie: When the Pokémon knocks out another Pokémon with a move, its Attack goes up 1 stage. Returns the Attack stage change.
+    def moxie_ability_attacker(self, knocked_out):
+        if "moxie" not in self.attacker_abilities or not knocked_out:
+            return 0
+        return 1
+    def moxie_ability_defender(self, knocked_out):
+        if "moxie" not in self.defender_abilities or not knocked_out:
+            return 0
+        return 1
+
+    # Justified: When the Pokémon is hit by a Dark-type move, its Attack goes up 1 stage. Returns the Attack stage change.
+    def justified_ability_attacker(self):
+        if "justified" not in self.attacker_abilities or self.move_type != "dark" or self.status_move():
+            return 0
+        if self.type_effectiveness_attacker() == 0:
+            return 0
+        return 1
+    def justified_ability_defender(self):
+        if "justified" not in self.defender_abilities or self.move_type != "dark" or self.status_move():
+            return 0
+        if self.type_effectiveness_defender() == 0:
+            return 0
+        return 1
+
+    # Rattled: When the Pokémon is hit by a Dark, Bug or Ghost-type move or gets Intimidated, its Speed goes up 1 stage. Returns the Speed stage change.
+    def rattled_ability_attacker(self, intimidated=False):
+        if "rattled" not in self.attacker_abilities:
+            return 0
+        if intimidated:
+            return 1
+        if self.move_type not in ("dark", "bug", "ghost") or self.status_move():
+            return 0
+        if self.type_effectiveness_attacker() == 0:
+            return 0
+        return 1
+    def rattled_ability_defender(self, intimidated=False):
+        if "rattled" not in self.defender_abilities:
+            return 0
+        if intimidated:
+            return 1
+        if self.move_type not in ("dark", "bug", "ghost") or self.status_move():
+            return 0
+        if self.type_effectiveness_defender() == 0:
+            return 0
+        return 1
 
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
