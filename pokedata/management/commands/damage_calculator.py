@@ -233,7 +233,7 @@ TRACE_BANNED_ABILITIES = {
     "zen-mode", "zero-to-hero",
 }
 
-# Moves Normalize doesn't change to Normal type. Refrigerate, Pixilate and Aerilate skip these too.
+# Moves Normalize doesn't change to Normal type. Refrigerate, Pixilate, Aerilate and Galvanize skip these too.
 NORMALIZE_EXCEPTIONS = {
     "hidden-power", "judgment", "multi-attack", "natural-gift", "revelation-dance",
     "struggle", "techno-blast", "terrain-pulse", "weather-ball",
@@ -374,6 +374,8 @@ BATTLE_FORMS = {
     "darmanitan-zen": {"types": ["fire", "psychic"], "stats": {"hp": 105, "attack": 30, "defense": 105, "special-attack": 140, "special-defense": 105, "speed": 55}},
     "aegislash-blade": {"types": ["steel", "ghost"], "stats": {"hp": 60, "attack": 140, "defense": 50, "special-attack": 140, "special-defense": 50, "speed": 60}},
     "minior-core": {"types": ["rock", "flying"], "stats": {"hp": 60, "attack": 100, "defense": 60, "special-attack": 100, "special-defense": 60, "speed": 120}},
+    "wishiwashi-school": {"types": ["water"], "stats": {"hp": 45, "attack": 140, "defense": 130, "special-attack": 140, "special-defense": 135, "speed": 30}},
+    "zygarde-complete": {"types": ["dragon", "ground"], "stats": {"hp": 216, "attack": 100, "defense": 121, "special-attack": 91, "special-defense": 95, "speed": 85}},
 }
 
 # Moves Parental Bond doesn't make hit twice (charge moves, future moves and moves that only work once).
@@ -384,6 +386,36 @@ PARENTAL_BOND_EXCEPTIONS = {
     "self-destruct", "shadow-force", "skull-bash", "sky-attack", "sky-drop", "solar-beam",
     "solar-blade",
 }
+
+# Healing moves Triage gives +3 priority.
+HEALING_MOVES = {
+    "absorb", "bitter-blade", "drain-punch", "draining-kiss", "dream-eater",
+    "floral-healing", "giga-drain", "heal-order", "heal-pulse", "healing-wish",
+    "horn-leech", "jungle-healing", "leech-life", "life-dew", "lunar-blessing",
+    "lunar-dance", "matcha-gotcha", "mega-drain", "milk-drink", "moonlight",
+    "morning-sun", "oblivion-wing", "parabolic-charge", "purify", "recover", "rest",
+    "revival-blessing", "roost", "shore-up", "slack-off", "soft-boiled", "strength-sap",
+    "swallow", "synthesis", "wish",
+}
+
+# Dance moves Dancer copies.
+DANCE_MOVES = {
+    "aqua-step", "clangorous-soul", "dragon-dance", "feather-dance", "fiery-dance",
+    "lunar-dance", "petal-dance", "quiver-dance", "revelation-dance", "swords-dance",
+    "teeter-dance", "victory-dance",
+}
+
+# The type each Memory gives Silvally with RKS System.
+MEMORY_TYPES = {
+    "bug-memory": "bug", "dark-memory": "dark", "dragon-memory": "dragon", "electric-memory": "electric",
+    "fairy-memory": "fairy", "fighting-memory": "fighting", "fire-memory": "fire", "flying-memory": "flying",
+    "ghost-memory": "ghost", "grass-memory": "grass", "ground-memory": "ground", "ice-memory": "ice",
+    "poison-memory": "poison", "psychic-memory": "psychic", "rock-memory": "rock", "steel-memory": "steel",
+    "water-memory": "water",
+}
+
+# Abilities Receiver and Power of Alchemy can't copy. Same as Trace plus Wonder Guard.
+RECEIVER_BANNED_ABILITIES = TRACE_BANNED_ABILITIES | {"wonder-guard"}
 
 
 class DamageCalculator:
@@ -3649,6 +3681,338 @@ class DamageCalculator:
         if 0 < hp_after <= max_hp / 2 and current_hp > max_hp / 2:
             return 1
         return 0
+
+    # Slush Rush: Doubles the Pokémon's Speed in snow.
+    def slush_rush_ability_attacker(self):
+        if "slush-rush" not in self.attacker_abilities:
+            return self.attacker.stats["speed"]
+        if self.current_weather() in ("snow", "hail"):
+            return self.attacker.stats["speed"] * 2
+        return self.attacker.stats["speed"]
+    def slush_rush_ability_defender(self):
+        if "slush-rush" not in self.defender_abilities:
+            return self.defender.stats["speed"]
+        if self.current_weather() in ("snow", "hail"):
+            return self.defender.stats["speed"] * 2
+        return self.defender.stats["speed"]
+
+    # Long Reach: The Pokémon's moves don't make contact. Returns True if the move makes contact.
+    def long_reach_ability_attacker(self):
+        if not self.contact_move():
+            return False
+        return "long-reach" not in self.attacker_abilities
+    def long_reach_ability_defender(self):
+        if not self.contact_move():
+            return False
+        return "long-reach" not in self.defender_abilities
+        # Will have the contact abilities (Rough Skin, Static, etc.) check this later.
+
+    # Liquid Voice: The Pokémon's sound moves become Water type. Returns the move's type.
+    def liquid_voice_ability_attacker(self):
+        if "liquid-voice" not in self.attacker_abilities or not self.sound_move():
+            return self.move_type
+        return "water"
+    def liquid_voice_ability_defender(self):
+        if "liquid-voice" not in self.defender_abilities or not self.sound_move():
+            return self.move_type
+        return "water"
+
+    # Triage: The Pokémon's healing moves get +3 priority. Returns the move's priority.
+    def triage_ability_attacker(self):
+        if "triage" not in self.attacker_abilities or self.move_name not in HEALING_MOVES:
+            return self.move_data.priority
+        return self.move_data.priority + 3
+    def triage_ability_defender(self):
+        if "triage" not in self.defender_abilities or self.move_name not in HEALING_MOVES:
+            return self.move_data.priority
+        return self.move_data.priority + 3
+
+    # Galvanize: The Pokémon's Normal-type moves become Electric type and do 20% more damage. Returns the move's type and power.
+    def galvanize_ability_attacker(self):
+        if "galvanize" not in self.attacker_abilities or self.move_type != "normal" or self.move_name in NORMALIZE_EXCEPTIONS:
+            return self.move_type, self.move_power
+        if not self.move_power:
+            return "electric", self.move_power
+        return "electric", self.move_power * 1.2
+    def galvanize_ability_defender(self):
+        if "galvanize" not in self.defender_abilities or self.move_type != "normal" or self.move_name in NORMALIZE_EXCEPTIONS:
+            return self.move_type, self.move_power
+        if not self.move_power:
+            return "electric", self.move_power
+        return "electric", self.move_power * 1.2
+
+    # Surge Surfer: Doubles the Pokémon's Speed in Electric Terrain.
+    def surge_surfer_ability_attacker(self):
+        if "surge-surfer" not in self.attacker_abilities or self.terrain != "electric-terrain":
+            return self.attacker.stats["speed"]
+        return self.attacker.stats["speed"] * 2
+    def surge_surfer_ability_defender(self):
+        if "surge-surfer" not in self.defender_abilities or self.terrain != "electric-terrain":
+            return self.defender.stats["speed"]
+        return self.defender.stats["speed"] * 2
+
+    # Schooling: Wishiwashi is in School Form above 1/4 HP and goes back to Solo Form at 1/4 HP or less. Returns its form name, types and stats.
+    def schooling_ability_attacker(self, current_hp, max_hp):
+        if "schooling" not in self.attacker_abilities or not self.attacker.name.startswith("wishiwashi") or current_hp <= max_hp / 4:
+            return self.attacker.name, self.attacker.types, self.attacker.stats
+        form = BATTLE_FORMS["wishiwashi-school"]
+        return "wishiwashi-school", form["types"], form["stats"]
+    def schooling_ability_defender(self, current_hp, max_hp):
+        if "schooling" not in self.defender_abilities or not self.defender.name.startswith("wishiwashi") or current_hp <= max_hp / 4:
+            return self.defender.name, self.defender.types, self.defender.stats
+        form = BATTLE_FORMS["wishiwashi-school"]
+        return "wishiwashi-school", form["types"], form["stats"]
+
+    # Disguise: The first damaging hit Mimikyu takes does no damage. It busts the disguise and Mimikyu loses 1/8 of its max HP instead. Returns the move's power and the HP Mimikyu loses.
+    # busted = True if the disguise is already broken.
+    def disguise_ability_attacker(self, busted=False):
+        if "disguise" not in self.attacker_abilities or not self.attacker.name.startswith("mimikyu") or busted:
+            return self.move_power, 0
+        if self.status_move() or self.type_effectiveness_attacker() == 0:
+            return self.move_power, 0
+        return 0, 0.125
+    def disguise_ability_defender(self, busted=False):
+        if "disguise" not in self.defender_abilities or not self.defender.name.startswith("mimikyu") or busted:
+            return self.move_power, 0
+        if self.status_move() or self.type_effectiveness_defender() == 0:
+            return self.move_power, 0
+        return 0, 0.125
+
+    # Battle Bond: The first time Greninja knocks out a Pokémon, its Attack, Sp. Atk and Speed go up 1 stage. Returns the Attack, Sp. Atk and Speed stage changes.
+    # already_used = True if Battle Bond already went off this battle.
+    def battle_bond_ability_attacker(self, knocked_out, already_used=False):
+        if "battle-bond" not in self.attacker_abilities or not self.attacker.name.startswith("greninja"):
+            return 0, 0, 0
+        if not knocked_out or already_used:
+            return 0, 0, 0
+        return 1, 1, 1
+    def battle_bond_ability_defender(self, knocked_out, already_used=False):
+        if "battle-bond" not in self.defender_abilities or not self.defender.name.startswith("greninja"):
+            return 0, 0, 0
+        if not knocked_out or already_used:
+            return 0, 0, 0
+        return 1, 1, 1
+
+    # Power Construct: When Zygarde's HP is 1/2 or less at the end of a turn, it changes to Complete Forme. Returns its form name, types and stats.
+    def power_construct_ability_attacker(self, current_hp, max_hp):
+        if "power-construct" not in self.attacker_abilities or not self.attacker.name.startswith("zygarde") or current_hp > max_hp / 2:
+            return self.attacker.name, self.attacker.types, self.attacker.stats
+        form = BATTLE_FORMS["zygarde-complete"]
+        return "zygarde-complete", form["types"], form["stats"]
+    def power_construct_ability_defender(self, current_hp, max_hp):
+        if "power-construct" not in self.defender_abilities or not self.defender.name.startswith("zygarde") or current_hp > max_hp / 2:
+            return self.defender.name, self.defender.types, self.defender.stats
+        form = BATTLE_FORMS["zygarde-complete"]
+        return "zygarde-complete", form["types"], form["stats"]
+
+    # Corrosion: The Pokémon can poison Steel and Poison types. Returns True if the target still can't be poisoned.
+    def corrosion_ability_attacker(self, incoming_status):
+        if "corrosion" not in self.attacker_abilities or incoming_status not in ("poison", "badly-poison"):
+            return self.status_immune_defender(incoming_status)
+        for ability in self.defender_abilities:
+            if STATUS_IMMUNITY_ABILITIES.get(ability) in ("all", "poison"):
+                return True
+        return self.field_blocks_status_defender(incoming_status)
+    def corrosion_ability_defender(self, incoming_status):
+        if "corrosion" not in self.defender_abilities or incoming_status not in ("poison", "badly-poison"):
+            return self.status_immune_attacker(incoming_status)
+        for ability in self.attacker_abilities:
+            if STATUS_IMMUNITY_ABILITIES.get(ability) in ("all", "poison"):
+                return True
+        return self.field_blocks_status_attacker(incoming_status)
+
+    # Comatose: The Pokémon is always drowsy, so moves like Hex and Wake-Up Slap treat it as asleep. Returns True if it counts as asleep.
+    # Comatose's status immunity is in STATUS_IMMUNITY_ABILITIES.
+    def comatose_ability_attacker(self):
+        return "comatose" in self.attacker_abilities
+    def comatose_ability_defender(self):
+        return "comatose" in self.defender_abilities
+
+    # Queenly Majesty: Opposing Pokémon can't use priority moves on the Pokémon. Returns True if the move is blocked.
+    # priority = the move's priority after abilities like Prankster.
+    def queenly_majesty_ability_attacker(self, priority=None):
+        if "queenly-majesty" not in self.attacker_abilities:
+            return False
+        if priority is None:
+            priority = self.move_data.priority
+        if priority <= 0:
+            return False
+        return not self.status_move() or self.move_name in TARGETED_STATUS_MOVES
+    def queenly_majesty_ability_defender(self, priority=None):
+        if "queenly-majesty" not in self.defender_abilities:
+            return False
+        if priority is None:
+            priority = self.move_data.priority
+        if priority <= 0:
+            return False
+        return not self.status_move() or self.move_name in TARGETED_STATUS_MOVES
+
+    # Innards Out: When the Pokémon is knocked out, the attacker takes dmg equal to the HP the Pokémon had left. Returns that dmg.
+    # damage = the dmg from the hit. current_hp = its HP before the hit.
+    def innards_out_ability_attacker(self, damage, current_hp):
+        if "innards-out" not in self.attacker_abilities or damage < current_hp:
+            return 0
+        if "magic-guard" in self.defender_abilities:
+            return 0
+        return current_hp
+    def innards_out_ability_defender(self, damage, current_hp):
+        if "innards-out" not in self.defender_abilities or damage < current_hp:
+            return 0
+        if "magic-guard" in self.attacker_abilities:
+            return 0
+        return current_hp
+
+    # Dancer: When another Pokémon uses a dance move, the Pokémon copies it right after. Returns True if it copies the move.
+    def dancer_ability_attacker(self):
+        if "dancer" not in self.attacker_abilities:
+            return False
+        return self.move_name in DANCE_MOVES
+    def dancer_ability_defender(self):
+        if "dancer" not in self.defender_abilities:
+            return False
+        return self.move_name in DANCE_MOVES
+
+    # Battery: Boosts the power of its allies' special moves by 30%. ally_abilities = the abilities of the attacker's ally.
+    def battery_ability_attacker(self, ally_abilities=None):
+        if not ally_abilities or "battery" not in ally_abilities or not self.move_power:
+            return self.move_power
+        if self.move_data.damage_class == "special":
+            return self.move_power * 1.3
+        return self.move_power
+    def battery_ability_defender(self, ally_abilities=None):
+        if not ally_abilities or "battery" not in ally_abilities or not self.move_power:
+            return self.move_power
+        if self.move_data.damage_class == "special":
+            return self.move_power * 1.3
+        return self.move_power
+
+    # Fluffy: Contact moves do half damage to the Pokémon, but Fire-type moves do double.
+    def fluffy_ability_attacker(self):
+        if "fluffy" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        power = self.move_power
+        if self.move_type == "fire":
+            power *= 2
+        if self.contact_move():
+            power *= 0.5
+        return power
+    def fluffy_ability_defender(self):
+        if "fluffy" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        power = self.move_power
+        if self.move_type == "fire":
+            power *= 2
+        if self.contact_move():
+            power *= 0.5
+        return power
+
+    # Dazzling: Same as Queenly Majesty. Opposing Pokémon can't use priority moves on the Pokémon. Returns True if the move is blocked.
+    def dazzling_ability_attacker(self, priority=None):
+        if "dazzling" not in self.attacker_abilities:
+            return False
+        if priority is None:
+            priority = self.move_data.priority
+        if priority <= 0:
+            return False
+        return not self.status_move() or self.move_name in TARGETED_STATUS_MOVES
+    def dazzling_ability_defender(self, priority=None):
+        if "dazzling" not in self.defender_abilities:
+            return False
+        if priority is None:
+            priority = self.move_data.priority
+        if priority <= 0:
+            return False
+        return not self.status_move() or self.move_name in TARGETED_STATUS_MOVES
+
+    # Soul-Heart: Every time another Pokémon faints, the Pokémon's Sp. Atk goes up 1 stage. Returns the Sp. Atk stage change.
+    # fainted_count = how many other Pokémon just fainted.
+    def soul_heart_ability_attacker(self, fainted_count=0):
+        if "soul-heart" not in self.attacker_abilities:
+            return 0
+        return fainted_count
+    def soul_heart_ability_defender(self, fainted_count=0):
+        if "soul-heart" not in self.defender_abilities:
+            return 0
+        return fainted_count
+
+    # Tangling Hair: Same as Gooey. When the Pokémon is hit by a contact move, the attacker's Speed goes down 1 stage. Returns the attacker's Speed stage change.
+    def tangling_hair_ability_attacker(self):
+        if "tangling-hair" not in self.attacker_abilities or not self.contact_move():
+            return 0
+        return -1
+    def tangling_hair_ability_defender(self):
+        if "tangling-hair" not in self.defender_abilities or not self.contact_move():
+            return 0
+        return -1
+
+    # Receiver: When the Pokémon's ally faints, it copies the ally's ability. Returns the Pokémon's abilities after.
+    # fainted_ally_abilities = the abilities of the ally that fainted.
+    def receiver_ability_attacker(self, fainted_ally_abilities=None):
+        if "receiver" not in self.attacker_abilities or not fainted_ally_abilities:
+            return self.attacker_abilities
+        copied = [ability for ability in fainted_ally_abilities if ability not in RECEIVER_BANNED_ABILITIES]
+        if not copied:
+            return self.attacker_abilities
+        return copied
+    def receiver_ability_defender(self, fainted_ally_abilities=None):
+        if "receiver" not in self.defender_abilities or not fainted_ally_abilities:
+            return self.defender_abilities
+        copied = [ability for ability in fainted_ally_abilities if ability not in RECEIVER_BANNED_ABILITIES]
+        if not copied:
+            return self.defender_abilities
+        return copied
+
+    # Power of Alchemy: Same as Receiver. When the Pokémon's ally faints, it copies the ally's ability. Returns the Pokémon's abilities after.
+    def power_of_alchemy_ability_attacker(self, fainted_ally_abilities=None):
+        if "power-of-alchemy" not in self.attacker_abilities or not fainted_ally_abilities:
+            return self.attacker_abilities
+        copied = [ability for ability in fainted_ally_abilities if ability not in RECEIVER_BANNED_ABILITIES]
+        if not copied:
+            return self.attacker_abilities
+        return copied
+    def power_of_alchemy_ability_defender(self, fainted_ally_abilities=None):
+        if "power-of-alchemy" not in self.defender_abilities or not fainted_ally_abilities:
+            return self.defender_abilities
+        copied = [ability for ability in fainted_ally_abilities if ability not in RECEIVER_BANNED_ABILITIES]
+        if not copied:
+            return self.defender_abilities
+        return copied
+
+    # Beast Boost: When the Pokémon knocks out another Pokémon with a move, its highest stat goes up 1 stage. Returns the stat that goes up.
+    def beast_boost_ability_attacker(self, knocked_out):
+        if "beast-boost" not in self.attacker_abilities or not knocked_out:
+            return None
+        stats = ["attack", "defense", "special-attack", "special-defense", "speed"]
+        return max(stats, key=lambda stat: self.attacker.stats[stat])
+    def beast_boost_ability_defender(self, knocked_out):
+        if "beast-boost" not in self.defender_abilities or not knocked_out:
+            return None
+        stats = ["attack", "defense", "special-attack", "special-defense", "speed"]
+        return max(stats, key=lambda stat: self.defender.stats[stat])
+
+    # RKS System: Silvally's type changes to match the Memory it's holding. Returns the Pokémon's types.
+    def rks_system_ability_attacker(self, held_item):
+        if "rks-system" not in self.attacker_abilities:
+            return self.attacker.types
+        return [MEMORY_TYPES.get(held_item, "normal")]
+    def rks_system_ability_defender(self, held_item):
+        if "rks-system" not in self.defender_abilities:
+            return self.defender.types
+        return [MEMORY_TYPES.get(held_item, "normal")]
+
+    # Electric Surge: Sets Electric Terrain for 5 turns when the Pokémon enters battle. Returns the terrain.
+    def electric_surge_ability_attacker(self):
+        if "electric-surge" not in self.attacker_abilities or self.terrain == "electric-terrain":
+            return self.terrain
+        self.terrain = "electric-terrain"
+        self.terrain_turns = TERRAIN_EFFECTS["electric-terrain"]["turns"]
+        return self.terrain
+    def electric_surge_ability_defender(self):
+        if "electric-surge" not in self.defender_abilities or self.terrain == "electric-terrain":
+            return self.terrain
+        self.terrain = "electric-terrain"
+        self.terrain_turns = TERRAIN_EFFECTS["electric-terrain"]["turns"]
+        return self.terrain
 
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
