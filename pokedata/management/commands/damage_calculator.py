@@ -188,6 +188,7 @@ VOLATILE_IMMUNITY_ABILITIES = {
     "oblivious": {"infatuation", "taunt", "intimidate"},
     "own-tempo": {"confusion", "intimidate"},
     "inner-focus": {"flinch", "intimidate"},
+    "aroma-veil": {"infatuation", "taunt", "torment", "encore", "disable", "heal-block"},
 }
 
 STATUS_STAT_BOOST_ABILITIES = {
@@ -232,7 +233,7 @@ TRACE_BANNED_ABILITIES = {
     "zen-mode", "zero-to-hero",
 }
 
-# Moves Normalize doesn't change to Normal type.
+# Moves Normalize doesn't change to Normal type. Refrigerate skips these too.
 NORMALIZE_EXCEPTIONS = {
     "hidden-power", "judgment", "multi-attack", "natural-gift", "revelation-dance",
     "struggle", "techno-blast", "terrain-pulse", "weather-ball",
@@ -323,6 +324,55 @@ CANT_SUPPRESS_ABILITIES = {
     "as-one-glastrier", "as-one-spectrier", "battle-bond", "comatose", "disguise", "gulp-missile",
     "ice-face", "multitype", "power-construct", "rks-system", "schooling", "shields-down",
     "stance-change", "tera-shift", "zen-mode", "zero-to-hero",
+}
+
+# Status moves Magic Bounce bounces back.
+REFLECTABLE_MOVES = {
+    "attract", "baby-doll-eyes", "block", "captivate", "charm", "confide",
+    "confuse-ray", "corrosive-gas", "cotton-spore", "dark-void", "defog", "disable",
+    "eerie-impulse", "embargo", "encore", "entrainment", "fake-tears", "feather-dance",
+    "flash", "flatter", "floral-healing", "foresight", "forests-curse", "gastro-acid",
+    "glare", "grass-whistle", "growl", "heal-block", "heal-pulse", "hypnosis",
+    "kinesis", "leech-seed", "leer", "lovely-kiss", "magic-powder", "mean-look",
+    "metal-sound", "miracle-eye", "noble-roar", "odor-sleuth", "parting-shot",
+    "play-nice", "poison-gas", "poison-powder", "powder", "purify", "roar",
+    "sand-attack", "scary-face", "screech", "simple-beam", "sing", "sleep-powder",
+    "smokescreen", "soak", "spicy-extract", "spider-web", "spikes", "spite", "spore",
+    "spotlight", "stealth-rock", "sticky-web", "strength-sap", "string-shot",
+    "stun-spore", "supersonic", "swagger", "sweet-kiss", "sweet-scent", "tail-whip",
+    "tar-shot", "taunt", "tearful-look", "telekinesis", "thunder-wave", "tickle",
+    "topsy-turvy", "torment", "toxic", "toxic-spikes", "toxic-thread", "trick-or-treat",
+    "venom-drench", "whirlwind", "will-o-wisp", "worry-seed", "yawn",
+}
+
+# Status moves aimed at the target (Dark types are immune to these when Prankster boosts them).
+TARGETED_STATUS_MOVES = {
+    "after-you", "attract", "baby-doll-eyes", "bestow", "block", "captivate", "charm",
+    "confide", "confuse-ray", "conversion-2", "corrosive-gas", "cotton-spore", "curse",
+    "dark-void", "decorate", "defog", "disable", "doodle", "eerie-impulse", "electrify",
+    "embargo", "encore", "entrainment", "fake-tears", "feather-dance", "flash",
+    "flatter", "floral-healing", "foresight", "forests-curse", "gastro-acid", "glare",
+    "grass-whistle", "growl", "guard-split", "guard-swap", "heal-block", "heal-pulse",
+    "heart-swap", "hypnosis", "instruct", "kinesis", "leech-seed", "leer", "lock-on",
+    "lovely-kiss", "magic-powder", "me-first", "mean-look", "memento", "metal-sound",
+    "mimic", "mind-reader", "miracle-eye", "mirror-move", "nature-power", "nightmare",
+    "noble-roar", "octolock", "odor-sleuth", "pain-split", "parting-shot", "play-nice",
+    "poison-gas", "poison-powder", "powder", "power-split", "power-swap", "psych-up",
+    "psycho-shift", "purify", "quash", "reflect-type", "roar", "role-play",
+    "sand-attack", "scary-face", "screech", "simple-beam", "sing", "sketch",
+    "skill-swap", "sleep-powder", "smokescreen", "soak", "speed-swap", "spicy-extract",
+    "spider-web", "spite", "spore", "spotlight", "strength-sap", "string-shot",
+    "stun-spore", "supersonic", "swagger", "sweet-kiss", "sweet-scent", "switcheroo",
+    "tail-whip", "tar-shot", "taunt", "tearful-look", "teeter-dance", "telekinesis",
+    "thunder-wave", "tickle", "topsy-turvy", "torment", "toxic", "toxic-thread",
+    "transform", "trick", "trick-or-treat", "venom-drench", "whirlwind", "will-o-wisp",
+    "worry-seed", "yawn",
+}
+
+# Forms some Pokémon change into during battle. The database only has the default forms, so these are hard coded.
+BATTLE_FORMS = {
+    "darmanitan-zen": {"types": ["fire", "psychic"], "stats": {"hp": 105, "attack": 30, "defense": 105, "special-attack": 140, "special-defense": 105, "speed": 55}},
+    "aegislash-blade": {"types": ["steel", "ghost"], "stats": {"hp": 60, "attack": 140, "defense": 50, "special-attack": 140, "special-defense": 50, "speed": 60}},
 }
 
 
@@ -2959,6 +3009,340 @@ class DamageCalculator:
         if self.type_effectiveness_defender() == 0:
             return 0
         return 1
+
+    # Magic Bounce: Status moves like Taunt, Toxic and Stealth Rock get bounced back at the Pokémon that used them. Returns True if the move bounces back.
+    def magic_bounce_ability_attacker(self):
+        if "magic-bounce" not in self.attacker_abilities:
+            return False
+        return self.move_name in REFLECTABLE_MOVES
+    def magic_bounce_ability_defender(self):
+        if "magic-bounce" not in self.defender_abilities:
+            return False
+        return self.move_name in REFLECTABLE_MOVES
+
+    # Sap Sipper: Grass moves don't affect the Pokémon. Instead they raise its Attack by 1 stage.
+    def sap_sipper_ability_attacker(self):
+        if "sap-sipper" not in self.attacker_abilities or self.move_type != "grass":
+            return self.move_power, 0
+        return 0, 1
+    def sap_sipper_ability_defender(self):
+        if "sap-sipper" not in self.defender_abilities or self.move_type != "grass":
+            return self.move_power, 0
+        return 0, 1
+
+    # Prankster: The Pokémon's status moves get +1 priority. Returns the move's priority.
+    def prankster_ability_attacker(self):
+        if "prankster" not in self.attacker_abilities or not self.status_move():
+            return self.move_data.priority
+        return self.move_data.priority + 1
+    def prankster_ability_defender(self):
+        if "prankster" not in self.defender_abilities or not self.status_move():
+            return self.move_data.priority
+        return self.move_data.priority + 1
+
+    # Prankster: Dark types are immune to status moves boosted by Prankster. Returns True if the move fails.
+    def prankster_dark_immunity_attacker(self):
+        if "prankster" not in self.attacker_abilities or self.move_name not in TARGETED_STATUS_MOVES:
+            return False
+        return "dark" in self.defender.types
+    def prankster_dark_immunity_defender(self):
+        if "prankster" not in self.defender_abilities or self.move_name not in TARGETED_STATUS_MOVES:
+            return False
+        return "dark" in self.attacker.types
+
+    # Sand Force: Boosts the power of the Pokémon's Rock, Ground and Steel-type moves by 30% in a sandstorm.
+    # Sand Force's immunity to sandstorm dmg is in WEATHER_EFFECTS.
+    def sand_force_ability_attacker(self):
+        if "sand-force" not in self.attacker_abilities or not self.move_power or self.current_weather() != "sandstorm":
+            return self.move_power
+        if self.move_type in ("rock", "ground", "steel"):
+            return self.move_power * 1.3
+        return self.move_power
+    def sand_force_ability_defender(self):
+        if "sand-force" not in self.defender_abilities or not self.move_power or self.current_weather() != "sandstorm":
+            return self.move_power
+        if self.move_type in ("rock", "ground", "steel"):
+            return self.move_power * 1.3
+        return self.move_power
+
+    # Iron Barbs: Same as Rough Skin. When the Pokémon is hit by a contact move, the attacker takes 1/8 of its max HP as dmg.
+    def iron_barbs_ability_attacker(self):
+        if "iron-barbs" not in self.attacker_abilities or not self.contact_move():
+            return 0
+        if "magic-guard" in self.defender_abilities:
+            return 0
+        return 0.125
+    def iron_barbs_ability_defender(self):
+        if "iron-barbs" not in self.defender_abilities or not self.contact_move():
+            return 0
+        if "magic-guard" in self.attacker_abilities:
+            return 0
+        return 0.125
+
+    # Zen Mode: When Darmanitan's HP is 1/2 or less at the end of a turn, it changes to Zen Mode. Returns its form name, types and stats.
+    def zen_mode_ability_attacker(self, current_hp, max_hp):
+        if "zen-mode" not in self.attacker_abilities or not self.attacker.name.startswith("darmanitan") or current_hp > max_hp / 2:
+            return self.attacker.name, self.attacker.types, self.attacker.stats
+        form = BATTLE_FORMS["darmanitan-zen"]
+        return "darmanitan-zen", form["types"], form["stats"]
+    def zen_mode_ability_defender(self, current_hp, max_hp):
+        if "zen-mode" not in self.defender_abilities or not self.defender.name.startswith("darmanitan") or current_hp > max_hp / 2:
+            return self.defender.name, self.defender.types, self.defender.stats
+        form = BATTLE_FORMS["darmanitan-zen"]
+        return "darmanitan-zen", form["types"], form["stats"]
+
+    # Victory Star: Boosts the accuracy of the Pokémon's moves (and its allies' moves) by 10%. Returns the move's accuracy. None means the move never misses.
+    def victory_star_ability_attacker(self):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if "victory-star" not in self.attacker_abilities:
+            return accuracy
+        return accuracy * 1.1
+    def victory_star_ability_defender(self):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if "victory-star" not in self.defender_abilities:
+            return accuracy
+        return accuracy * 1.1
+
+    # Turboblaze: Same as Mold Breaker. The Pokémon's moves ignore abilities that would block or weaken them. Returns the target's abilities that still work.
+    def turboblaze_ability_attacker(self):
+        if "turboblaze" not in self.attacker_abilities:
+            return self.defender_abilities
+        return [ability for ability in self.defender_abilities if ability not in BREAKABLE_ABILITIES]
+    def turboblaze_ability_defender(self):
+        if "turboblaze" not in self.defender_abilities:
+            return self.attacker_abilities
+        return [ability for ability in self.attacker_abilities if ability not in BREAKABLE_ABILITIES]
+
+    # Teravolt: Same as Mold Breaker. The Pokémon's moves ignore abilities that would block or weaken them. Returns the target's abilities that still work.
+    def teravolt_ability_attacker(self):
+        if "teravolt" not in self.attacker_abilities:
+            return self.defender_abilities
+        return [ability for ability in self.defender_abilities if ability not in BREAKABLE_ABILITIES]
+    def teravolt_ability_defender(self):
+        if "teravolt" not in self.defender_abilities:
+            return self.attacker_abilities
+        return [ability for ability in self.attacker_abilities if ability not in BREAKABLE_ABILITIES]
+
+    # Aroma Veil: The Pokémon and its allies can't be infatuated, taunted, tormented, encored, disabled or heal blocked.
+    # incoming_effect = the effect a move or ability is trying to give. Returns True if Aroma Veil blocks it.
+    def aroma_veil_ability_attacker(self, incoming_effect):
+        if "aroma-veil" not in self.attacker_abilities:
+            return False
+        return incoming_effect in VOLATILE_IMMUNITY_ABILITIES["aroma-veil"]
+    def aroma_veil_ability_defender(self, incoming_effect):
+        if "aroma-veil" not in self.defender_abilities:
+            return False
+        return incoming_effect in VOLATILE_IMMUNITY_ABILITIES["aroma-veil"]
+
+    # Flower Veil: Other Pokémon can't lower the stats of its Grass-type allies, or its own if it's Grass type. Returns the stage change that actually happens.
+    def flower_veil_ability_attacker(self, stage_change, from_opponent=True):
+        if "flower-veil" not in self.attacker_abilities or "grass" not in self.attacker.types:
+            return stage_change
+        if stage_change < 0 and from_opponent:
+            return 0
+        return stage_change
+    def flower_veil_ability_defender(self, stage_change, from_opponent=True):
+        if "flower-veil" not in self.defender_abilities or "grass" not in self.defender.types:
+            return stage_change
+        if stage_change < 0 and from_opponent:
+            return 0
+        return stage_change
+
+    # Flower Veil: Its Grass-type allies, and itself if it's Grass type, can't get a status from other Pokémon. Returns the status that actually sticks.
+    def flower_veil_status_attacker(self):
+        if "flower-veil" not in self.attacker_abilities or "grass" not in self.attacker.types:
+            return self.status_attacker
+        return None
+    def flower_veil_status_defender(self):
+        if "flower-veil" not in self.defender_abilities or "grass" not in self.defender.types:
+            return self.status_defender
+        return None
+        # Will add the ally part later for doubles.
+
+    # Cheek Pouch: When the Pokémon eats a Berry, it also heals 1/3 of its max HP. ate_berry = True if it ate a Berry this turn.
+    def cheek_pouch_ability_attacker(self, ate_berry):
+        if "cheek-pouch" not in self.attacker_abilities or not ate_berry:
+            return 0
+        return 1 / 3
+    def cheek_pouch_ability_defender(self, ate_berry):
+        if "cheek-pouch" not in self.defender_abilities or not ate_berry:
+            return 0
+        return 1 / 3
+
+    # Protean: The Pokémon's type changes to the type of the move it's about to use. It only works once each time it enters battle. Returns its types.
+    # already_used = True if Protean already changed its type since it came in.
+    def protean_ability_attacker(self, already_used=False):
+        if "protean" not in self.attacker_abilities or already_used:
+            return self.attacker.types
+        return [self.move_type]
+    def protean_ability_defender(self, already_used=False):
+        if "protean" not in self.defender_abilities or already_used:
+            return self.defender.types
+        return [self.move_type]
+
+    # Fur Coat: Doubles the Pokémon's Defense.
+    def fur_coat_ability_attacker(self):
+        if "fur-coat" not in self.attacker_abilities:
+            return self.attacker.stats["defense"]
+        return self.attacker.stats["defense"] * 2
+    def fur_coat_ability_defender(self):
+        if "fur-coat" not in self.defender_abilities:
+            return self.defender.stats["defense"]
+        return self.defender.stats["defense"] * 2
+
+    # Magician: When the Pokémon hits a target with a damaging move, it steals the target's item if it isn't holding one. Returns the item it's holding after.
+    def magician_ability_attacker(self, held_item, opponent_item):
+        if "magician" not in self.attacker_abilities or held_item or self.status_move() or self.move_name == "fling":
+            return held_item
+        if "sticky-hold" in self.defender_abilities or self.type_effectiveness_defender() == 0:
+            return held_item
+        return opponent_item
+    def magician_ability_defender(self, held_item, opponent_item):
+        if "magician" not in self.defender_abilities or held_item or self.status_move() or self.move_name == "fling":
+            return held_item
+        if "sticky-hold" in self.attacker_abilities or self.type_effectiveness_attacker() == 0:
+            return held_item
+        return opponent_item
+
+    # Competitive: When an opposing Pokémon lowers one of its stats, its Sp. Atk goes up 2 stages. Returns the Sp. Atk stage change.
+    def competitive_ability_attacker(self, stage_change, from_opponent=True):
+        if "competitive" not in self.attacker_abilities or stage_change >= 0 or not from_opponent:
+            return 0
+        return 2
+    def competitive_ability_defender(self, stage_change, from_opponent=True):
+        if "competitive" not in self.defender_abilities or stage_change >= 0 or not from_opponent:
+            return 0
+        return 2
+
+    # Strong Jaw: Boosts the power of the Pokémon's biting moves by 50%.
+    def strong_jaw_ability_attacker(self):
+        if "strong-jaw" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.bite_move():
+            return self.move_power * 1.5
+        return self.move_power
+    def strong_jaw_ability_defender(self):
+        if "strong-jaw" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.bite_move():
+            return self.move_power * 1.5
+        return self.move_power
+
+    # Refrigerate: The Pokémon's Normal-type moves become Ice type and do 20% more damage. Returns the move's type and power.
+    def refrigerate_ability_attacker(self):
+        if "refrigerate" not in self.attacker_abilities or self.move_type != "normal" or self.move_name in NORMALIZE_EXCEPTIONS:
+            return self.move_type, self.move_power
+        if not self.move_power:
+            return "ice", self.move_power
+        return "ice", self.move_power * 1.2
+    def refrigerate_ability_defender(self):
+        if "refrigerate" not in self.defender_abilities or self.move_type != "normal" or self.move_name in NORMALIZE_EXCEPTIONS:
+            return self.move_type, self.move_power
+        if not self.move_power:
+            return "ice", self.move_power
+        return "ice", self.move_power * 1.2
+
+    # Sweet Veil: The Pokémon and its allies can't fall asleep. Returns the status that actually sticks.
+    def sweet_veil_ability_attacker(self):
+        if "sweet-veil" not in self.attacker_abilities:
+            return self.status_attacker
+        if self.status_attacker == "sleep":
+            return None
+        return self.status_attacker
+    def sweet_veil_ability_defender(self):
+        if "sweet-veil" not in self.defender_abilities:
+            return self.status_defender
+        if self.status_defender == "sleep":
+            return None
+        return self.status_defender
+        # Will add the ally part later for doubles.
+
+    # Stance Change: Aegislash changes to Blade Forme when it uses a damaging move and back to Shield Forme when it uses King's Shield. Returns its form name, types and stats.
+    # blade_forme = True if it's already in Blade Forme.
+    def stance_change_ability_attacker(self, blade_forme=False):
+        shield = (self.attacker.name, self.attacker.types, self.attacker.stats)
+        blade = ("aegislash-blade", BATTLE_FORMS["aegislash-blade"]["types"], BATTLE_FORMS["aegislash-blade"]["stats"])
+        if "stance-change" not in self.attacker_abilities or not self.attacker.name.startswith("aegislash"):
+            return shield
+        if self.move_name == "kings-shield":
+            return shield
+        if self.status_move():
+            return blade if blade_forme else shield
+        return blade
+    def stance_change_ability_defender(self, blade_forme=False):
+        shield = (self.defender.name, self.defender.types, self.defender.stats)
+        blade = ("aegislash-blade", BATTLE_FORMS["aegislash-blade"]["types"], BATTLE_FORMS["aegislash-blade"]["stats"])
+        if "stance-change" not in self.defender_abilities or not self.defender.name.startswith("aegislash"):
+            return shield
+        if self.move_name == "kings-shield":
+            return shield
+        if self.status_move():
+            return blade if blade_forme else shield
+        return blade
+
+    # Gale Wings: The Pokémon's Flying-type moves get +1 priority when its HP is full. Returns the move's priority.
+    def gale_wings_ability_attacker(self, current_hp, max_hp):
+        if "gale-wings" not in self.attacker_abilities or self.move_type != "flying" or current_hp < max_hp:
+            return self.move_data.priority
+        return self.move_data.priority + 1
+    def gale_wings_ability_defender(self, current_hp, max_hp):
+        if "gale-wings" not in self.defender_abilities or self.move_type != "flying" or current_hp < max_hp:
+            return self.move_data.priority
+        return self.move_data.priority + 1
+
+    # Mega Launcher: Boosts the power of the Pokémon's pulse moves by 50%.
+    def mega_launcher_ability_attacker(self):
+        if "mega-launcher" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.pulse_move():
+            return self.move_power * 1.5
+        return self.move_power
+    def mega_launcher_ability_defender(self):
+        if "mega-launcher" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.pulse_move():
+            return self.move_power * 1.5
+        return self.move_power
+        # Will add Heal Pulse healing 3/4 instead of 1/2 later.
+
+    # Grass Pelt: Boosts the Pokémon's Defense by 50% in Grassy Terrain.
+    def grass_pelt_ability_attacker(self):
+        if "grass-pelt" not in self.attacker_abilities or self.terrain != "grassy-terrain":
+            return self.attacker.stats["defense"]
+        return self.attacker.stats["defense"] * 1.5
+    def grass_pelt_ability_defender(self):
+        if "grass-pelt" not in self.defender_abilities or self.terrain != "grassy-terrain":
+            return self.defender.stats["defense"]
+        return self.defender.stats["defense"] * 1.5
+
+    # Symbiosis: When the Pokémon's ally uses up its item, the Pokémon passes its own item to the ally. Returns the item the ally gets.
+    # ally_used_item = True if the ally just used up its item.
+    def symbiosis_ability_attacker(self, held_item, ally_used_item=False):
+        if "symbiosis" not in self.attacker_abilities or not ally_used_item or not held_item:
+            return None
+        return held_item
+    def symbiosis_ability_defender(self, held_item, ally_used_item=False):
+        if "symbiosis" not in self.defender_abilities or not ally_used_item or not held_item:
+            return None
+        return held_item
+
+    # Tough Claws: Boosts the power of the Pokémon's contact moves by 30%.
+    def tough_claws_ability_attacker(self):
+        if "tough-claws" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.contact_move():
+            return self.move_power * 1.3
+        return self.move_power
+    def tough_claws_ability_defender(self):
+        if "tough-claws" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.contact_move():
+            return self.move_power * 1.3
+        return self.move_power
 
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
