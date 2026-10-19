@@ -233,7 +233,7 @@ TRACE_BANNED_ABILITIES = {
     "zen-mode", "zero-to-hero",
 }
 
-# Moves Normalize doesn't change to Normal type. Refrigerate skips these too.
+# Moves Normalize doesn't change to Normal type. Refrigerate, Pixilate and Aerilate skip these too.
 NORMALIZE_EXCEPTIONS = {
     "hidden-power", "judgment", "multi-attack", "natural-gift", "revelation-dance",
     "struggle", "techno-blast", "terrain-pulse", "weather-ball",
@@ -373,6 +373,16 @@ TARGETED_STATUS_MOVES = {
 BATTLE_FORMS = {
     "darmanitan-zen": {"types": ["fire", "psychic"], "stats": {"hp": 105, "attack": 30, "defense": 105, "special-attack": 140, "special-defense": 105, "speed": 55}},
     "aegislash-blade": {"types": ["steel", "ghost"], "stats": {"hp": 60, "attack": 140, "defense": 50, "special-attack": 140, "special-defense": 50, "speed": 60}},
+    "minior-core": {"types": ["rock", "flying"], "stats": {"hp": 60, "attack": 100, "defense": 60, "special-attack": 100, "special-defense": 60, "speed": 120}},
+}
+
+# Moves Parental Bond doesn't make hit twice (charge moves, future moves and moves that only work once).
+PARENTAL_BOND_EXCEPTIONS = {
+    "bounce", "dig", "dive", "doom-desire", "dragon-darts", "dynamax-cannon", "electro-shot",
+    "endeavor", "explosion", "final-gambit", "fling", "fly", "freeze-shock", "future-sight",
+    "ice-ball", "ice-burn", "meteor-beam", "phantom-force", "razor-wind", "rollout",
+    "self-destruct", "shadow-force", "skull-bash", "sky-attack", "sky-drop", "solar-beam",
+    "solar-blade",
 }
 
 
@@ -3343,6 +3353,302 @@ class DamageCalculator:
         if self.contact_move():
             return self.move_power * 1.3
         return self.move_power
+
+    # Pixilate: The Pokémon's Normal-type moves become Fairy type and do 20% more damage. Returns the move's type and power.
+    def pixilate_ability_attacker(self):
+        if "pixilate" not in self.attacker_abilities or self.move_type != "normal" or self.move_name in NORMALIZE_EXCEPTIONS:
+            return self.move_type, self.move_power
+        if not self.move_power:
+            return "fairy", self.move_power
+        return "fairy", self.move_power * 1.2
+    def pixilate_ability_defender(self):
+        if "pixilate" not in self.defender_abilities or self.move_type != "normal" or self.move_name in NORMALIZE_EXCEPTIONS:
+            return self.move_type, self.move_power
+        if not self.move_power:
+            return "fairy", self.move_power
+        return "fairy", self.move_power * 1.2
+
+    # Gooey: When the Pokémon is hit by a contact move, the attacker's Speed goes down 1 stage. Returns the attacker's Speed stage change.
+    def gooey_ability_attacker(self):
+        if "gooey" not in self.attacker_abilities or not self.contact_move():
+            return 0
+        return -1
+    def gooey_ability_defender(self):
+        if "gooey" not in self.defender_abilities or not self.contact_move():
+            return 0
+        return -1
+
+    # Aerilate: The Pokémon's Normal-type moves become Flying type and do 20% more damage. Returns the move's type and power.
+    def aerilate_ability_attacker(self):
+        if "aerilate" not in self.attacker_abilities or self.move_type != "normal" or self.move_name in NORMALIZE_EXCEPTIONS:
+            return self.move_type, self.move_power
+        if not self.move_power:
+            return "flying", self.move_power
+        return "flying", self.move_power * 1.2
+    def aerilate_ability_defender(self):
+        if "aerilate" not in self.defender_abilities or self.move_type != "normal" or self.move_name in NORMALIZE_EXCEPTIONS:
+            return self.move_type, self.move_power
+        if not self.move_power:
+            return "flying", self.move_power
+        return "flying", self.move_power * 1.2
+
+    # Parental Bond: The Pokémon's damaging moves hit twice. The second hit does 1/4 of the damage. Returns the power of each hit.
+    def parental_bond_ability_attacker(self):
+        if "parental-bond" not in self.attacker_abilities or not self.move_power or self.move_name in PARENTAL_BOND_EXCEPTIONS:
+            return (self.move_power,)
+        if self.move_data.meta is not None and self.move_data.meta.get("max_hits"):
+            return (self.move_power,)
+        return self.move_power, self.move_power * 0.25
+    def parental_bond_ability_defender(self):
+        if "parental-bond" not in self.defender_abilities or not self.move_power or self.move_name in PARENTAL_BOND_EXCEPTIONS:
+            return (self.move_power,)
+        if self.move_data.meta is not None and self.move_data.meta.get("max_hits"):
+            return (self.move_power,)
+        return self.move_power, self.move_power * 0.25
+
+    # Dark Aura: Boosts the power of every Pokémon's Dark-type moves by 33%. With Aura Break out, they do 25% less instead.
+    # Dark Aura affects the whole field, so it's one check instead of attacker/defender versions.
+    def dark_aura_on_field(self):
+        return "dark-aura" in self.attacker_abilities or "dark-aura" in self.defender_abilities
+    def dark_aura_ability(self):
+        if not self.dark_aura_on_field() or self.move_type != "dark" or not self.move_power:
+            return self.move_power
+        if self.aura_break_on_field():
+            return self.move_power * 0.75
+        return self.move_power * 1.33
+
+    # Fairy Aura: Boosts the power of every Pokémon's Fairy-type moves by 33%. With Aura Break out, they do 25% less instead.
+    # Fairy Aura affects the whole field, so it's one check instead of attacker/defender versions.
+    def fairy_aura_on_field(self):
+        return "fairy-aura" in self.attacker_abilities or "fairy-aura" in self.defender_abilities
+    def fairy_aura_ability(self):
+        if not self.fairy_aura_on_field() or self.move_type != "fairy" or not self.move_power:
+            return self.move_power
+        if self.aura_break_on_field():
+            return self.move_power * 0.75
+        return self.move_power * 1.33
+
+    # Aura Break: Reverses Dark Aura and Fairy Aura, so those moves do 25% less damage instead of 33% more.
+    # Aura Break affects the whole field, so it's one check instead of attacker/defender versions.
+    def aura_break_on_field(self):
+        return "aura-break" in self.attacker_abilities or "aura-break" in self.defender_abilities
+
+    # Primordial Sea: Summons heavy rain when the Pokémon enters battle. It lasts until the Pokémon leaves the field.
+    def primordial_sea_ability_attacker(self):
+        if "primordial-sea" not in self.attacker_abilities:
+            return self.weather
+        self.weather = "heavy-rain"
+        self.weather_turns = WEATHER_EFFECTS["heavy-rain"]["turns"]
+        return self.weather
+    def primordial_sea_ability_defender(self):
+        if "primordial-sea" not in self.defender_abilities:
+            return self.weather
+        self.weather = "heavy-rain"
+        self.weather_turns = WEATHER_EFFECTS["heavy-rain"]["turns"]
+        return self.weather
+
+    # Desolate Land: Summons extreme sunlight when the Pokémon enters battle. It lasts until the Pokémon leaves the field.
+    def desolate_land_ability_attacker(self):
+        if "desolate-land" not in self.attacker_abilities:
+            return self.weather
+        self.weather = "extreme-sun"
+        self.weather_turns = WEATHER_EFFECTS["extreme-sun"]["turns"]
+        return self.weather
+    def desolate_land_ability_defender(self):
+        if "desolate-land" not in self.defender_abilities:
+            return self.weather
+        self.weather = "extreme-sun"
+        self.weather_turns = WEATHER_EFFECTS["extreme-sun"]["turns"]
+        return self.weather
+
+    # Delta Stream: Summons strong winds when the Pokémon enters battle. It lasts until the Pokémon leaves the field.
+    def delta_stream_ability_attacker(self):
+        if "delta-stream" not in self.attacker_abilities:
+            return self.weather
+        self.weather = "strong-winds"
+        self.weather_turns = WEATHER_EFFECTS["strong-winds"]["turns"]
+        return self.weather
+    def delta_stream_ability_defender(self):
+        if "delta-stream" not in self.defender_abilities:
+            return self.weather
+        self.weather = "strong-winds"
+        self.weather_turns = WEATHER_EFFECTS["strong-winds"]["turns"]
+        return self.weather
+
+    # Stamina: When the Pokémon is hit by a damaging move, its Defense goes up 1 stage. Returns the Defense stage change.
+    def stamina_ability_attacker(self):
+        if "stamina" not in self.attacker_abilities or self.status_move():
+            return 0
+        if self.type_effectiveness_attacker() == 0:
+            return 0
+        return 1
+    def stamina_ability_defender(self):
+        if "stamina" not in self.defender_abilities or self.status_move():
+            return 0
+        if self.type_effectiveness_defender() == 0:
+            return 0
+        return 1
+
+    # Wimp Out: When a hit drops the Pokémon's HP to 1/2 or less, it switches out. Returns True if it switches out.
+    # damage = the dmg from the hit. current_hp = its HP before the hit.
+    def wimp_out_ability_attacker(self, damage, current_hp, max_hp):
+        if "wimp-out" not in self.attacker_abilities:
+            return False
+        hp_after = current_hp - damage
+        return 0 < hp_after <= max_hp / 2 and current_hp > max_hp / 2
+    def wimp_out_ability_defender(self, damage, current_hp, max_hp):
+        if "wimp-out" not in self.defender_abilities:
+            return False
+        hp_after = current_hp - damage
+        return 0 < hp_after <= max_hp / 2 and current_hp > max_hp / 2
+
+    # Emergency Exit: Same as Wimp Out. When a hit drops the Pokémon's HP to 1/2 or less, it switches out. Returns True if it switches out.
+    def emergency_exit_ability_attacker(self, damage, current_hp, max_hp):
+        if "emergency-exit" not in self.attacker_abilities:
+            return False
+        hp_after = current_hp - damage
+        return 0 < hp_after <= max_hp / 2 and current_hp > max_hp / 2
+    def emergency_exit_ability_defender(self, damage, current_hp, max_hp):
+        if "emergency-exit" not in self.defender_abilities:
+            return False
+        hp_after = current_hp - damage
+        return 0 < hp_after <= max_hp / 2 and current_hp > max_hp / 2
+
+    # Water Compaction: When the Pokémon is hit by a Water-type move, its Defense goes up 2 stages. Returns the Defense stage change.
+    def water_compaction_ability_attacker(self):
+        if "water-compaction" not in self.attacker_abilities or self.move_type != "water" or self.status_move():
+            return 0
+        return 2
+    def water_compaction_ability_defender(self):
+        if "water-compaction" not in self.defender_abilities or self.move_type != "water" or self.status_move():
+            return 0
+        return 2
+
+    # Merciless: The Pokémon's moves always land a critical hit on a poisoned target. Returns the move's crit stage.
+    def merciless_ability_attacker(self):
+        crit_stage = 0
+        if self.move_data.meta is not None:
+            crit_stage = self.move_data.meta.get("crit_rate") or 0
+        if "merciless" in self.attacker_abilities and self.status_defender in ("poison", "badly-poison"):
+            return 3
+        return min(crit_stage, 3)
+    def merciless_ability_defender(self):
+        crit_stage = 0
+        if self.move_data.meta is not None:
+            crit_stage = self.move_data.meta.get("crit_rate") or 0
+        if "merciless" in self.defender_abilities and self.status_attacker in ("poison", "badly-poison"):
+            return 3
+        return min(crit_stage, 3)
+
+    # Shields Down: Minior is in Meteor Form above 1/2 HP and changes to Core Form at 1/2 HP or less. Returns its form name, types and stats.
+    def shields_down_ability_attacker(self, current_hp, max_hp):
+        if "shields-down" not in self.attacker_abilities or not self.attacker.name.startswith("minior") or current_hp > max_hp / 2:
+            return self.attacker.name, self.attacker.types, self.attacker.stats
+        form = BATTLE_FORMS["minior-core"]
+        return "minior-core", form["types"], form["stats"]
+    def shields_down_ability_defender(self, current_hp, max_hp):
+        if "shields-down" not in self.defender_abilities or not self.defender.name.startswith("minior") or current_hp > max_hp / 2:
+            return self.defender.name, self.defender.types, self.defender.stats
+        form = BATTLE_FORMS["minior-core"]
+        return "minior-core", form["types"], form["stats"]
+
+    # Shields Down: In Meteor Form, Minior can't get a status. Returns the status that actually sticks.
+    def shields_down_status_attacker(self, current_hp, max_hp):
+        if "shields-down" not in self.attacker_abilities or not self.attacker.name.startswith("minior") or current_hp <= max_hp / 2:
+            return self.status_attacker
+        return None
+    def shields_down_status_defender(self, current_hp, max_hp):
+        if "shields-down" not in self.defender_abilities or not self.defender.name.startswith("minior") or current_hp <= max_hp / 2:
+            return self.status_defender
+        return None
+
+    # Stakeout: The Pokémon's Attack and Sp. Atk are doubled against a target that just switched in. Returns its Attack and Sp. Atk.
+    # target_switched_in = True if the target switched in this turn.
+    def stakeout_ability_attacker(self, target_switched_in=False):
+        attack = self.attacker.stats["attack"]
+        special_attack = self.attacker.stats["special-attack"]
+        if "stakeout" not in self.attacker_abilities or not target_switched_in:
+            return attack, special_attack
+        return attack * 2, special_attack * 2
+    def stakeout_ability_defender(self, target_switched_in=False):
+        attack = self.defender.stats["attack"]
+        special_attack = self.defender.stats["special-attack"]
+        if "stakeout" not in self.defender_abilities or not target_switched_in:
+            return attack, special_attack
+        return attack * 2, special_attack * 2
+
+    # Water Bubble: Fire-type moves do half damage to the Pokémon.
+    def water_bubble_ability_attacker(self):
+        if "water-bubble" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "fire":
+            return self.move_power * 0.5
+        return self.move_power
+    def water_bubble_ability_defender(self):
+        if "water-bubble" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "fire":
+            return self.move_power * 0.5
+        return self.move_power
+
+    # Water Bubble: The Pokémon's Water-type moves do double damage.
+    def water_bubble_power_attacker(self):
+        if "water-bubble" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "water":
+            return self.move_power * 2
+        return self.move_power
+    def water_bubble_power_defender(self):
+        if "water-bubble" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "water":
+            return self.move_power * 2
+        return self.move_power
+
+    # Water Bubble: The Pokémon can't be burned. Returns the status that actually sticks.
+    def water_bubble_status_attacker(self):
+        if "water-bubble" not in self.attacker_abilities:
+            return self.status_attacker
+        if self.status_attacker == STATUS_IMMUNITY_ABILITIES["water-bubble"]:
+            return None
+        return self.status_attacker
+    def water_bubble_status_defender(self):
+        if "water-bubble" not in self.defender_abilities:
+            return self.status_defender
+        if self.status_defender == STATUS_IMMUNITY_ABILITIES["water-bubble"]:
+            return None
+        return self.status_defender
+
+    # Steelworker: Boosts the power of the Pokémon's Steel-type moves by 50%.
+    def steelworker_ability_attacker(self):
+        if "steelworker" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "steel":
+            return self.move_power * 1.5
+        return self.move_power
+    def steelworker_ability_defender(self):
+        if "steelworker" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "steel":
+            return self.move_power * 1.5
+        return self.move_power
+
+    # Berserk: When a hit drops the Pokémon's HP to 1/2 or less, its Sp. Atk goes up 1 stage. Returns the Sp. Atk stage change.
+    # damage = the dmg from the hit. current_hp = its HP before the hit.
+    def berserk_ability_attacker(self, damage, current_hp, max_hp):
+        if "berserk" not in self.attacker_abilities:
+            return 0
+        hp_after = current_hp - damage
+        if 0 < hp_after <= max_hp / 2 and current_hp > max_hp / 2:
+            return 1
+        return 0
+    def berserk_ability_defender(self, damage, current_hp, max_hp):
+        if "berserk" not in self.defender_abilities:
+            return 0
+        hp_after = current_hp - damage
+        if 0 < hp_after <= max_hp / 2 and current_hp > max_hp / 2:
+            return 1
+        return 0
 
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
