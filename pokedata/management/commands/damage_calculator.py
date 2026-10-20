@@ -376,6 +376,7 @@ BATTLE_FORMS = {
     "minior-core": {"types": ["rock", "flying"], "stats": {"hp": 60, "attack": 100, "defense": 60, "special-attack": 100, "special-defense": 60, "speed": 120}},
     "wishiwashi-school": {"types": ["water"], "stats": {"hp": 45, "attack": 140, "defense": 130, "special-attack": 140, "special-defense": 135, "speed": 30}},
     "zygarde-complete": {"types": ["dragon", "ground"], "stats": {"hp": 216, "attack": 100, "defense": 121, "special-attack": 91, "special-defense": 95, "speed": 85}},
+    "eiscue-noice": {"types": ["ice"], "stats": {"hp": 75, "attack": 80, "defense": 70, "special-attack": 65, "special-defense": 50, "speed": 130}},
 }
 
 # Moves Parental Bond doesn't make hit twice (charge moves, future moves and moves that only work once).
@@ -416,6 +417,20 @@ MEMORY_TYPES = {
 
 # Abilities Receiver and Power of Alchemy can't copy. Same as Trace plus Wonder Guard.
 RECEIVER_BANNED_ABILITIES = TRACE_BANNED_ABILITIES | {"wonder-guard"}
+
+# Abilities that can't be swapped (Wandering Spirit and Skill Swap fail with these).
+SKILL_SWAP_BANNED_ABILITIES = {
+    "as-one-glastrier", "as-one-spectrier", "battle-bond", "comatose", "commander", "disguise",
+    "embody-aspect", "hunger-switch", "ice-face", "illusion", "multitype", "neutralizing-gas",
+    "poison-puppeteer", "power-construct", "protosynthesis", "quark-drive", "rks-system", "schooling",
+    "shields-down", "stance-change", "tera-shell", "tera-shift", "teraform-zero", "wonder-guard",
+    "zen-mode", "zero-to-hero",
+}
+
+# The type each terrain gives a Pokémon with Mimicry.
+MIMICRY_TYPES = {
+    "electric-terrain": "electric", "grassy-terrain": "grass", "misty-terrain": "fairy", "psychic-terrain": "psychic",
+}
 
 
 class DamageCalculator:
@@ -4145,6 +4160,382 @@ class DamageCalculator:
         if "libero" not in self.defender_abilities or already_used:
             return self.defender.types
         return [self.move_type]
+
+    # Ball Fetch: If the Pokémon isn't holding an item, it picks up the first Poké Ball that fails to catch a wild Pokémon.
+    # This ability currently has no effect on the dmg calc and will be implemented at a later date.
+    # def ball_fetch_ability_attacker(self):
+    #     return "ball-fetch" in self.attacker_abilities
+    # def ball_fetch_ability_defender(self):
+    #     return "ball-fetch" in self.defender_abilities
+
+    # Cotton Down: When the Pokémon is hit by a damaging move, every other Pokémon's Speed goes down 1 stage. Returns the attacker's Speed stage change.
+    def cotton_down_ability_attacker(self):
+        if "cotton-down" not in self.attacker_abilities or self.status_move():
+            return 0
+        if self.type_effectiveness_attacker() == 0:
+            return 0
+        return -1
+    def cotton_down_ability_defender(self):
+        if "cotton-down" not in self.defender_abilities or self.status_move():
+            return 0
+        if self.type_effectiveness_defender() == 0:
+            return 0
+        return -1
+
+    # Propeller Tail: The Pokémon's moves can't be pulled to another target by moves and abilities like Follow Me and Storm Drain. Returns True if the move can't be redirected.
+    def propeller_tail_ability_attacker(self):
+        return "propeller-tail" in self.attacker_abilities
+    def propeller_tail_ability_defender(self):
+        return "propeller-tail" in self.defender_abilities
+
+    # Mirror Armor: When another Pokémon tries to lower the Pokémon's stats, the drop bounces back to that Pokémon instead. Returns the stage change it takes and the stage change bounced back.
+    def mirror_armor_ability_attacker(self, stage_change, from_opponent=True):
+        if "mirror-armor" not in self.attacker_abilities or stage_change >= 0 or not from_opponent:
+            return stage_change, 0
+        return 0, stage_change
+    def mirror_armor_ability_defender(self, stage_change, from_opponent=True):
+        if "mirror-armor" not in self.defender_abilities or stage_change >= 0 or not from_opponent:
+            return stage_change, 0
+        return 0, stage_change
+
+    # Gulp Missile: When Cramorant uses Surf or Dive, it catches prey. Above 1/2 HP it's Gulping, at 1/2 HP or less it's Gorging. Returns its form name.
+    def gulp_missile_form_attacker(self, current_hp, max_hp):
+        if "gulp-missile" not in self.attacker_abilities or not self.attacker.name.startswith("cramorant"):
+            return self.attacker.name
+        if self.move_name not in ("surf", "dive"):
+            return self.attacker.name
+        if current_hp <= max_hp / 2:
+            return "cramorant-gorging"
+        return "cramorant-gulping"
+    def gulp_missile_form_defender(self, current_hp, max_hp):
+        if "gulp-missile" not in self.defender_abilities or not self.defender.name.startswith("cramorant"):
+            return self.defender.name
+        if self.move_name not in ("surf", "dive"):
+            return self.defender.name
+        if current_hp <= max_hp / 2:
+            return "cramorant-gorging"
+        return "cramorant-gulping"
+
+    # Gulp Missile: When Cramorant is hit while it has prey, it spits it at the attacker. The attacker loses 1/4 of its max HP. Gulping also lowers its Defense 1 stage and Gorging paralyzes it.
+    # form = Cramorant's current form. Returns the HP the attacker loses, its Defense stage change and its status.
+    def gulp_missile_ability_attacker(self, form):
+        if "gulp-missile" not in self.attacker_abilities or form not in ("cramorant-gulping", "cramorant-gorging"):
+            return 0, 0, self.status_defender
+        if self.status_move() or self.type_effectiveness_attacker() == 0:
+            return 0, 0, self.status_defender
+        damage = 0 if "magic-guard" in self.defender_abilities else 0.25
+        if form == "cramorant-gulping":
+            return damage, -1, self.status_defender
+        if self.status_effects_defender() or self.status_immune_defender("paralysis"):
+            return damage, 0, self.status_defender
+        return damage, 0, "paralysis"
+    def gulp_missile_ability_defender(self, form):
+        if "gulp-missile" not in self.defender_abilities or form not in ("cramorant-gulping", "cramorant-gorging"):
+            return 0, 0, self.status_attacker
+        if self.status_move() or self.type_effectiveness_defender() == 0:
+            return 0, 0, self.status_attacker
+        damage = 0 if "magic-guard" in self.attacker_abilities else 0.25
+        if form == "cramorant-gulping":
+            return damage, -1, self.status_attacker
+        if self.status_effects_attacker() or self.status_immune_attacker("paralysis"):
+            return damage, 0, self.status_attacker
+        return damage, 0, "paralysis"
+
+    # Stalwart: Same as Propeller Tail. The Pokémon's moves can't be pulled to another target. Returns True if the move can't be redirected.
+    def stalwart_ability_attacker(self):
+        return "stalwart" in self.attacker_abilities
+    def stalwart_ability_defender(self):
+        return "stalwart" in self.defender_abilities
+
+    # Steam Engine: When the Pokémon is hit by a Fire or Water-type move, its Speed goes up 6 stages. Returns the Speed stage change.
+    def steam_engine_ability_attacker(self):
+        if "steam-engine" not in self.attacker_abilities or self.move_type not in ("fire", "water") or self.status_move():
+            return 0
+        return 6
+    def steam_engine_ability_defender(self):
+        if "steam-engine" not in self.defender_abilities or self.move_type not in ("fire", "water") or self.status_move():
+            return 0
+        return 6
+
+    # Punk Rock: Sound moves do half damage to the Pokémon.
+    def punk_rock_ability_attacker(self):
+        if "punk-rock" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.sound_move():
+            return self.move_power * 0.5
+        return self.move_power
+    def punk_rock_ability_defender(self):
+        if "punk-rock" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.sound_move():
+            return self.move_power * 0.5
+        return self.move_power
+
+    # Punk Rock: Boosts the power of the Pokémon's sound moves by 30%.
+    def punk_rock_power_attacker(self):
+        if "punk-rock" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.sound_move():
+            return self.move_power * 1.3
+        return self.move_power
+    def punk_rock_power_defender(self):
+        if "punk-rock" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.sound_move():
+            return self.move_power * 1.3
+        return self.move_power
+
+    # Sand Spit: When the Pokémon is hit by a damaging move, it summons a sandstorm for 5 turns. Returns the weather.
+    def sand_spit_ability_attacker(self):
+        if "sand-spit" not in self.attacker_abilities or self.status_move() or self.type_effectiveness_attacker() == 0:
+            return self.weather
+        if self.weather == "sandstorm" or WEATHER_EFFECTS.get(self.weather, {}).get("primal"):
+            return self.weather
+        self.weather = "sandstorm"
+        self.weather_turns = WEATHER_EFFECTS["sandstorm"]["turns"]
+        return self.weather
+    def sand_spit_ability_defender(self):
+        if "sand-spit" not in self.defender_abilities or self.status_move() or self.type_effectiveness_defender() == 0:
+            return self.weather
+        if self.weather == "sandstorm" or WEATHER_EFFECTS.get(self.weather, {}).get("primal"):
+            return self.weather
+        self.weather = "sandstorm"
+        self.weather_turns = WEATHER_EFFECTS["sandstorm"]["turns"]
+        return self.weather
+
+    # Ice Scales: Special moves do half damage to the Pokémon.
+    def ice_scales_ability_attacker(self):
+        if "ice-scales" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.move_data.damage_class == "special":
+            return self.move_power * 0.5
+        return self.move_power
+    def ice_scales_ability_defender(self):
+        if "ice-scales" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.move_data.damage_class == "special":
+            return self.move_power * 0.5
+        return self.move_power
+
+    # Ripen: Doubles the effect of Berries the Pokémon eats. berry_effect = how much the Berry heals or how many stages it raises. Returns the effect after Ripen.
+    def ripen_ability_attacker(self, berry_effect):
+        if "ripen" not in self.attacker_abilities:
+            return berry_effect
+        return berry_effect * 2
+    def ripen_ability_defender(self, berry_effect):
+        if "ripen" not in self.defender_abilities:
+            return berry_effect
+        return berry_effect * 2
+        # Will add resist Berries like Occa Berry later with the items.
+
+    # Ice Face: The first physical hit Eiscue takes does no damage and breaks its ice face. Returns the move's power.
+    # busted = True if the ice face is already broken.
+    def ice_face_ability_attacker(self, busted=False):
+        if "ice-face" not in self.attacker_abilities or not self.attacker.name.startswith("eiscue") or busted:
+            return self.move_power
+        if self.move_data.damage_class != "physical" or self.type_effectiveness_attacker() == 0:
+            return self.move_power
+        return 0
+    def ice_face_ability_defender(self, busted=False):
+        if "ice-face" not in self.defender_abilities or not self.defender.name.startswith("eiscue") or busted:
+            return self.move_power
+        if self.move_data.damage_class != "physical" or self.type_effectiveness_defender() == 0:
+            return self.move_power
+        return 0
+
+    # Ice Face: With its ice face broken, Eiscue is in Noice Face until snow brings it back. Returns its form name, types and stats.
+    def ice_face_form_attacker(self, busted=False):
+        if "ice-face" not in self.attacker_abilities or not self.attacker.name.startswith("eiscue") or not busted:
+            return self.attacker.name, self.attacker.types, self.attacker.stats
+        if self.current_weather() in ("snow", "hail"):
+            return self.attacker.name, self.attacker.types, self.attacker.stats
+        form = BATTLE_FORMS["eiscue-noice"]
+        return "eiscue-noice", form["types"], form["stats"]
+    def ice_face_form_defender(self, busted=False):
+        if "ice-face" not in self.defender_abilities or not self.defender.name.startswith("eiscue") or not busted:
+            return self.defender.name, self.defender.types, self.defender.stats
+        if self.current_weather() in ("snow", "hail"):
+            return self.defender.name, self.defender.types, self.defender.stats
+        form = BATTLE_FORMS["eiscue-noice"]
+        return "eiscue-noice", form["types"], form["stats"]
+
+    # Power Spot: Boosts the power of its allies' moves by 30%. ally_abilities = the abilities of the attacker's ally.
+    def power_spot_ability_attacker(self, ally_abilities=None):
+        if not ally_abilities or "power-spot" not in ally_abilities or not self.move_power:
+            return self.move_power
+        return self.move_power * 1.3
+    def power_spot_ability_defender(self, ally_abilities=None):
+        if not ally_abilities or "power-spot" not in ally_abilities or not self.move_power:
+            return self.move_power
+        return self.move_power * 1.3
+
+    # Mimicry: The Pokémon's type changes to match the terrain. Returns its types.
+    def mimicry_ability_attacker(self):
+        if "mimicry" not in self.attacker_abilities or self.terrain not in MIMICRY_TYPES:
+            return self.attacker.types
+        return [MIMICRY_TYPES[self.terrain]]
+    def mimicry_ability_defender(self):
+        if "mimicry" not in self.defender_abilities or self.terrain not in MIMICRY_TYPES:
+            return self.defender.types
+        return [MIMICRY_TYPES[self.terrain]]
+
+    # Screen Cleaner: When the Pokémon enters battle, it removes Reflect, Light Screen and Aurora Veil from both sides. Returns True if a screen is still up.
+    def screen_cleaner_ability_attacker(self, screen_active=False):
+        if "screen-cleaner" not in self.attacker_abilities:
+            return screen_active
+        return False
+    def screen_cleaner_ability_defender(self, screen_active=False):
+        if "screen-cleaner" not in self.defender_abilities:
+            return screen_active
+        return False
+
+    # Steely Spirit: Boosts the power of Steel-type moves used by the Pokémon and its allies by 50%. ally_abilities = the abilities of the attacker's ally.
+    def steely_spirit_ability_attacker(self, ally_abilities=None):
+        if not self.move_power or self.move_type != "steel":
+            return self.move_power
+        power = self.move_power
+        if "steely-spirit" in self.attacker_abilities:
+            power *= 1.5
+        if ally_abilities and "steely-spirit" in ally_abilities:
+            power *= 1.5
+        return power
+    def steely_spirit_ability_defender(self, ally_abilities=None):
+        if not self.move_power or self.move_type != "steel":
+            return self.move_power
+        power = self.move_power
+        if "steely-spirit" in self.defender_abilities:
+            power *= 1.5
+        if ally_abilities and "steely-spirit" in ally_abilities:
+            power *= 1.5
+        return power
+
+    # Perish Body: When the Pokémon is hit by a contact move, it and the attacker will both faint in 3 turns, like Perish Song. Returns True if Perish Body goes off.
+    # already_perishing = True if the attacker already has a Perish Song count.
+    def perish_body_ability_attacker(self, already_perishing=False):
+        if "perish-body" not in self.attacker_abilities or not self.contact_move() or already_perishing:
+            return False
+        return True
+    def perish_body_ability_defender(self, already_perishing=False):
+        if "perish-body" not in self.defender_abilities or not self.contact_move() or already_perishing:
+            return False
+        return True
+
+    # Wandering Spirit: When the Pokémon is hit by a contact move, it swaps abilities with the attacker. Returns its abilities and the attacker's abilities after.
+    def wandering_spirit_ability_attacker(self):
+        if "wandering-spirit" not in self.attacker_abilities or not self.contact_move() or self.type_effectiveness_attacker() == 0:
+            return self.attacker_abilities, self.defender_abilities
+        for ability in self.defender_abilities:
+            if ability in SKILL_SWAP_BANNED_ABILITIES:
+                return self.attacker_abilities, self.defender_abilities
+        return self.defender_abilities, self.attacker_abilities
+    def wandering_spirit_ability_defender(self):
+        if "wandering-spirit" not in self.defender_abilities or not self.contact_move() or self.type_effectiveness_defender() == 0:
+            return self.defender_abilities, self.attacker_abilities
+        for ability in self.attacker_abilities:
+            if ability in SKILL_SWAP_BANNED_ABILITIES:
+                return self.defender_abilities, self.attacker_abilities
+        return self.attacker_abilities, self.defender_abilities
+
+    # Gorilla Tactics: Boosts the Pokémon's Attack by 50%, but it can only use the first move it picks.
+    def gorilla_tactics_ability_attacker(self):
+        if "gorilla-tactics" not in self.attacker_abilities:
+            return self.attacker.stats["attack"]
+        return self.attacker.stats["attack"] * 1.5
+    def gorilla_tactics_ability_defender(self):
+        if "gorilla-tactics" not in self.defender_abilities:
+            return self.defender.stats["attack"]
+        return self.defender.stats["attack"] * 1.5
+        # Will add the move lock later with the Choice items.
+
+    # Neutralizing Gas: While the Pokémon is out, the other Pokémon's abilities don't work. Returns the other Pokémon's abilities that still work.
+    def neutralizing_gas_ability_attacker(self):
+        if "neutralizing-gas" not in self.attacker_abilities:
+            return self.defender_abilities
+        return [ability for ability in self.defender_abilities if ability in CANT_SUPPRESS_ABILITIES or ability == "neutralizing-gas"]
+    def neutralizing_gas_ability_defender(self):
+        if "neutralizing-gas" not in self.defender_abilities:
+            return self.attacker_abilities
+        return [ability for ability in self.attacker_abilities if ability in CANT_SUPPRESS_ABILITIES or ability == "neutralizing-gas"]
+        # Will add Ability Shield later with the items.
+
+    # Pastel Veil: The Pokémon and its allies can't be poisoned. Returns the status that actually sticks.
+    def pastel_veil_ability_attacker(self):
+        if "pastel-veil" not in self.attacker_abilities:
+            return self.status_attacker
+        if self.status_attacker in ("poison", "badly-poison"):
+            return None
+        return self.status_attacker
+    def pastel_veil_ability_defender(self):
+        if "pastel-veil" not in self.defender_abilities:
+            return self.status_defender
+        if self.status_defender in ("poison", "badly-poison"):
+            return None
+        return self.status_defender
+        # Will add the ally part later for doubles.
+
+    # Hunger Switch: At the end of each turn, Morpeko switches between Full Belly Mode and Hangry Mode. Returns its form after the turn.
+    # hangry = True if it's in Hangry Mode right now.
+    def hunger_switch_ability_attacker(self, hangry=False):
+        if "hunger-switch" not in self.attacker_abilities or not self.attacker.name.startswith("morpeko"):
+            return self.attacker.name
+        if hangry:
+            return "morpeko-full-belly"
+        return "morpeko-hangry"
+    def hunger_switch_ability_defender(self, hangry=False):
+        if "hunger-switch" not in self.defender_abilities or not self.defender.name.startswith("morpeko"):
+            return self.defender.name
+        if hangry:
+            return "morpeko-full-belly"
+        return "morpeko-hangry"
+
+    # Hunger Switch: Aura Wheel is Electric type in Full Belly Mode and Dark type in Hangry Mode. Returns the move's type.
+    def hunger_switch_move_type_attacker(self, hangry=False):
+        if self.move_name != "aura-wheel" or not self.attacker.name.startswith("morpeko"):
+            return self.move_type
+        if hangry:
+            return "dark"
+        return "electric"
+    def hunger_switch_move_type_defender(self, hangry=False):
+        if self.move_name != "aura-wheel" or not self.defender.name.startswith("morpeko"):
+            return self.move_type
+        if hangry:
+            return "dark"
+        return "electric"
+
+    # Quick Draw: The Pokémon's damaging moves have a 30% chance to go first among moves with the same priority. Returns the move's priority.
+    def quick_draw_ability_attacker(self):
+        if "quick-draw" not in self.attacker_abilities or self.status_move():
+            return self.move_data.priority
+        if random.random() < 0.30:
+            return self.move_data.priority + 0.1
+        return self.move_data.priority
+    def quick_draw_ability_defender(self):
+        if "quick-draw" not in self.defender_abilities or self.status_move():
+            return self.move_data.priority
+        if random.random() < 0.30:
+            return self.move_data.priority + 0.1
+        return self.move_data.priority
+
+    # Unseen Fist: The Pokémon's contact moves hit through Protect and moves like it. Returns True if the move goes through Protect.
+    def unseen_fist_ability_attacker(self):
+        if "unseen-fist" not in self.attacker_abilities:
+            return False
+        return self.contact_move()
+    def unseen_fist_ability_defender(self):
+        if "unseen-fist" not in self.defender_abilities:
+            return False
+        return self.contact_move()
+
+    # Curious Medicine: When the Pokémon enters battle, its allies' stat changes are reset. Returns the ally's stat stages after.
+    # ally_stat_stages = the ally's current stat stages.
+    def curious_medicine_ability_attacker(self, ally_stat_stages=None):
+        if "curious-medicine" not in self.attacker_abilities:
+            return ally_stat_stages
+        return {}
+    def curious_medicine_ability_defender(self, ally_stat_stages=None):
+        if "curious-medicine" not in self.defender_abilities:
+            return ally_stat_stages
+        return {}
 
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
