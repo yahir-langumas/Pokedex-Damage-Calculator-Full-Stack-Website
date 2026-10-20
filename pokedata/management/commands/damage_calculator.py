@@ -4908,6 +4908,285 @@ class DamageCalculator:
             return self.attacker.stats["attack"]
         return self.attacker.stats["attack"] * 0.75
 
+    # Beads of Ruin: Lowers the Sp. Def of every other Pokémon by 25%. Returns the opposing Pokémon's Sp. Def.
+    def beads_of_ruin_ability_attacker(self):
+        if "beads-of-ruin" not in self.attacker_abilities or "beads-of-ruin" in self.defender_abilities:
+            return self.defender.stats["special-defense"]
+        return self.defender.stats["special-defense"] * 0.75
+    def beads_of_ruin_ability_defender(self):
+        if "beads-of-ruin" not in self.defender_abilities or "beads-of-ruin" in self.attacker_abilities:
+            return self.attacker.stats["special-defense"]
+        return self.attacker.stats["special-defense"] * 0.75
+
+    # Orichalcum Pulse: Summons harsh sunlight for 5 turns when the Pokémon enters battle. Returns the weather.
+    def orichalcum_pulse_ability_attacker(self):
+        if "orichalcum-pulse" not in self.attacker_abilities:
+            return self.weather
+        if self.weather == "sun" or WEATHER_EFFECTS.get(self.weather, {}).get("primal"):
+            return self.weather
+        self.weather = "sun"
+        self.weather_turns = WEATHER_EFFECTS["sun"]["turns"]
+        return self.weather
+    def orichalcum_pulse_ability_defender(self):
+        if "orichalcum-pulse" not in self.defender_abilities:
+            return self.weather
+        if self.weather == "sun" or WEATHER_EFFECTS.get(self.weather, {}).get("primal"):
+            return self.weather
+        self.weather = "sun"
+        self.weather_turns = WEATHER_EFFECTS["sun"]["turns"]
+        return self.weather
+
+    # Orichalcum Pulse: Boosts the Pokémon's Attack by 33% in harsh sunlight.
+    def orichalcum_pulse_attack_attacker(self):
+        if "orichalcum-pulse" not in self.attacker_abilities:
+            return self.attacker.stats["attack"]
+        if self.current_weather() in ("sun", "extreme-sun"):
+            return self.attacker.stats["attack"] * 1.33
+        return self.attacker.stats["attack"]
+    def orichalcum_pulse_attack_defender(self):
+        if "orichalcum-pulse" not in self.defender_abilities:
+            return self.defender.stats["attack"]
+        if self.current_weather() in ("sun", "extreme-sun"):
+            return self.defender.stats["attack"] * 1.33
+        return self.defender.stats["attack"]
+
+    # Hadron Engine: Sets Electric Terrain for 5 turns when the Pokémon enters battle. Returns the terrain.
+    def hadron_engine_ability_attacker(self):
+        if "hadron-engine" not in self.attacker_abilities or self.terrain == "electric-terrain":
+            return self.terrain
+        self.terrain = "electric-terrain"
+        self.terrain_turns = TERRAIN_EFFECTS["electric-terrain"]["turns"]
+        return self.terrain
+    def hadron_engine_ability_defender(self):
+        if "hadron-engine" not in self.defender_abilities or self.terrain == "electric-terrain":
+            return self.terrain
+        self.terrain = "electric-terrain"
+        self.terrain_turns = TERRAIN_EFFECTS["electric-terrain"]["turns"]
+        return self.terrain
+
+    # Hadron Engine: Boosts the Pokémon's Sp. Atk by 33% in Electric Terrain.
+    def hadron_engine_special_attack_attacker(self):
+        if "hadron-engine" not in self.attacker_abilities or self.terrain != "electric-terrain":
+            return self.attacker.stats["special-attack"]
+        return self.attacker.stats["special-attack"] * 1.33
+    def hadron_engine_special_attack_defender(self):
+        if "hadron-engine" not in self.defender_abilities or self.terrain != "electric-terrain":
+            return self.defender.stats["special-attack"]
+        return self.defender.stats["special-attack"] * 1.33
+
+    # Opportunist: When an opposing Pokémon's stats go up, the Pokémon copies the boost. Returns the stage change it copies.
+    # stage_change = how many stages the opposing Pokémon's stat changed.
+    def opportunist_ability_attacker(self, stage_change):
+        if "opportunist" not in self.attacker_abilities or stage_change <= 0:
+            return 0
+        return stage_change
+    def opportunist_ability_defender(self, stage_change):
+        if "opportunist" not in self.defender_abilities or stage_change <= 0:
+            return 0
+        return stage_change
+
+    # Cud Chew: When the Pokémon eats a Berry, it eats it again at the end of the next turn. Returns the Berry it eats again.
+    # berry_eaten_last_turn = the Berry it ate last turn.
+    def cud_chew_ability_attacker(self, berry_eaten_last_turn=None):
+        if "cud-chew" not in self.attacker_abilities or not berry_eaten_last_turn or not berry_eaten_last_turn.endswith("-berry"):
+            return None
+        return berry_eaten_last_turn
+    def cud_chew_ability_defender(self, berry_eaten_last_turn=None):
+        if "cud-chew" not in self.defender_abilities or not berry_eaten_last_turn or not berry_eaten_last_turn.endswith("-berry"):
+            return None
+        return berry_eaten_last_turn
+
+    # Sharpness: Boosts the power of the Pokémon's slicing moves by 50%.
+    def sharpness_ability_attacker(self):
+        if "sharpness" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.cut_move():
+            return self.move_power * 1.5
+        return self.move_power
+    def sharpness_ability_defender(self):
+        if "sharpness" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.cut_move():
+            return self.move_power * 1.5
+        return self.move_power
+
+    # Supreme Overlord: Boosts the power of the Pokémon's moves by 10% for each ally that fainted, up to 50%.
+    # fainted_allies = how many Pokémon on its team have fainted.
+    def supreme_overlord_ability_attacker(self, fainted_allies=0):
+        if "supreme-overlord" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        return self.move_power * (1 + 0.1 * min(fainted_allies, 5))
+    def supreme_overlord_ability_defender(self, fainted_allies=0):
+        if "supreme-overlord" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        return self.move_power * (1 + 0.1 * min(fainted_allies, 5))
+
+    # Costar: When the Pokémon enters battle, it copies its ally's stat changes. Returns its stat stages after.
+    # ally_stat_stages = the ally's current stat stages.
+    def costar_ability_attacker(self, ally_stat_stages=None):
+        if "costar" not in self.attacker_abilities or not ally_stat_stages:
+            return {}
+        return dict(ally_stat_stages)
+    def costar_ability_defender(self, ally_stat_stages=None):
+        if "costar" not in self.defender_abilities or not ally_stat_stages:
+            return {}
+        return dict(ally_stat_stages)
+
+    # Toxic Debris: When the Pokémon is hit by a physical move, it scatters Toxic Spikes on the attacker's side (up to 2 layers). Returns the layers after.
+    # toxic_spikes_layers = how many layers are already on the attacker's side.
+    def toxic_debris_ability_attacker(self, toxic_spikes_layers=0):
+        if "toxic-debris" not in self.attacker_abilities or self.move_data.damage_class != "physical":
+            return toxic_spikes_layers
+        if self.type_effectiveness_attacker() == 0:
+            return toxic_spikes_layers
+        return min(toxic_spikes_layers + 1, 2)
+    def toxic_debris_ability_defender(self, toxic_spikes_layers=0):
+        if "toxic-debris" not in self.defender_abilities or self.move_data.damage_class != "physical":
+            return toxic_spikes_layers
+        if self.type_effectiveness_defender() == 0:
+            return toxic_spikes_layers
+        return min(toxic_spikes_layers + 1, 2)
+
+    # Armor Tail: Same as Queenly Majesty. Opposing Pokémon can't use priority moves on the Pokémon. Returns True if the move is blocked.
+    def armor_tail_ability_attacker(self, priority=None):
+        if "armor-tail" not in self.attacker_abilities:
+            return False
+        if priority is None:
+            priority = self.move_data.priority
+        if priority <= 0:
+            return False
+        return not self.status_move() or self.move_name in TARGETED_STATUS_MOVES
+    def armor_tail_ability_defender(self, priority=None):
+        if "armor-tail" not in self.defender_abilities:
+            return False
+        if priority is None:
+            priority = self.move_data.priority
+        if priority <= 0:
+            return False
+        return not self.status_move() or self.move_name in TARGETED_STATUS_MOVES
+
+    # Earth Eater: Ground moves don't affect the Pokémon. Instead they heal 1/4 of its max HP.
+    def earth_eater_ability_attacker(self):
+        if "earth-eater" not in self.attacker_abilities or self.move_type != "ground":
+            return self.move_power, 0
+        return 0, 0.25
+    def earth_eater_ability_defender(self):
+        if "earth-eater" not in self.defender_abilities or self.move_type != "ground":
+            return self.move_power, 0
+        return 0, 0.25
+
+    # Mycelium Might: The Pokémon's status moves always go last among moves with the same priority. Returns the move's priority.
+    def mycelium_might_ability_attacker(self):
+        if "mycelium-might" not in self.attacker_abilities or not self.status_move():
+            return self.move_data.priority
+        return self.move_data.priority - 0.1
+    def mycelium_might_ability_defender(self):
+        if "mycelium-might" not in self.defender_abilities or not self.status_move():
+            return self.move_data.priority
+        return self.move_data.priority - 0.1
+
+    # Mycelium Might: The Pokémon's status moves ignore the target's ability. Returns the target's abilities that still work.
+    def mycelium_might_abilities_attacker(self):
+        if "mycelium-might" not in self.attacker_abilities or not self.status_move():
+            return self.defender_abilities
+        return [ability for ability in self.defender_abilities if ability not in BREAKABLE_ABILITIES]
+    def mycelium_might_abilities_defender(self):
+        if "mycelium-might" not in self.defender_abilities or not self.status_move():
+            return self.attacker_abilities
+        return [ability for ability in self.attacker_abilities if ability not in BREAKABLE_ABILITIES]
+
+    # Mind's Eye: The Pokémon's Normal and Fighting moves can hit Ghost types. Returns the type effectiveness against the target.
+    def minds_eye_ability_attacker(self):
+        if "minds-eye" not in self.attacker_abilities or self.move_type not in ("normal", "fighting"):
+            return self.type_effectiveness_defender()
+        removes_flying_weaknesses = self.weather_effects().get("removes_flying_weaknesses", False)
+        multiplier = 1
+        for type_name, type_data in zip(self.defender.types, self.defender_types_data):
+            if type_name == "ghost":
+                continue
+            if self.move_type in type_data["double_damage_from"]:
+                if not (removes_flying_weaknesses and type_name == "flying"):
+                    multiplier *= 2
+            elif self.move_type in type_data["half_damage_from"]:
+                multiplier *= 0.5
+            elif self.move_type in type_data["no_damage_from"]:
+                multiplier *= 0
+        return multiplier
+    def minds_eye_ability_defender(self):
+        if "minds-eye" not in self.defender_abilities or self.move_type not in ("normal", "fighting"):
+            return self.type_effectiveness_attacker()
+        removes_flying_weaknesses = self.weather_effects().get("removes_flying_weaknesses", False)
+        multiplier = 1
+        for type_name, type_data in zip(self.attacker.types, self.attacker_types_data):
+            if type_name == "ghost":
+                continue
+            if self.move_type in type_data["double_damage_from"]:
+                if not (removes_flying_weaknesses and type_name == "flying"):
+                    multiplier *= 2
+            elif self.move_type in type_data["half_damage_from"]:
+                multiplier *= 0.5
+            elif self.move_type in type_data["no_damage_from"]:
+                multiplier *= 0
+        return multiplier
+
+    # Mind's Eye: Same as Keen Eye. The Pokémon's moves ignore the target's evasion changes. Returns the move's accuracy. None means the move never misses.
+    def minds_eye_accuracy_attacker(self, accuracy_stage=0, target_evasion_stage=0):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if "minds-eye" in self.attacker_abilities:
+            target_evasion_stage = 0
+        stage = max(-6, min(6, accuracy_stage - target_evasion_stage))
+        if stage >= 0:
+            return accuracy * (3 + stage) / 3
+        return accuracy * 3 / (3 - stage)
+    def minds_eye_accuracy_defender(self, accuracy_stage=0, target_evasion_stage=0):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if "minds-eye" in self.defender_abilities:
+            target_evasion_stage = 0
+        stage = max(-6, min(6, accuracy_stage - target_evasion_stage))
+        if stage >= 0:
+            return accuracy * (3 + stage) / 3
+        return accuracy * 3 / (3 - stage)
+
+    # Mind's Eye: Other Pokémon can't lower this Pokémon's accuracy. Returns the stage change that actually happens.
+    def minds_eye_accuracy_drop_attacker(self, stage_change, from_opponent=True):
+        if "minds-eye" not in self.attacker_abilities:
+            return stage_change
+        if stage_change < 0 and from_opponent:
+            return 0
+        return stage_change
+    def minds_eye_accuracy_drop_defender(self, stage_change, from_opponent=True):
+        if "minds-eye" not in self.defender_abilities:
+            return stage_change
+        if stage_change < 0 and from_opponent:
+            return 0
+        return stage_change
+
+    # Supersweet Syrup: The first time the Pokémon enters battle, the opposing Pokémon's evasion goes down 1 stage. Returns the opposing Pokémon's evasion stage change.
+    # already_used = True if it already went off this battle.
+    def supersweet_syrup_ability_attacker(self, already_used=False):
+        if "supersweet-syrup" not in self.attacker_abilities or already_used:
+            return 0
+        return -1
+    def supersweet_syrup_ability_defender(self, already_used=False):
+        if "supersweet-syrup" not in self.defender_abilities or already_used:
+            return 0
+        return -1
+
+    # Hospitality: When the Pokémon enters battle, its ally heals 1/4 of its max HP. Returns how much the ally heals.
+    # has_ally = True if the Pokémon has an ally next to it.
+    def hospitality_ability_attacker(self, has_ally=False):
+        if "hospitality" not in self.attacker_abilities or not has_ally:
+            return 0
+        return 0.25
+    def hospitality_ability_defender(self, has_ally=False):
+        if "hospitality" not in self.defender_abilities or not has_ally:
+            return 0
+        return 0.25
+
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
     # Will add after finishing abilities 
