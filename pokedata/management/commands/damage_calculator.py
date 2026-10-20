@@ -378,6 +378,7 @@ BATTLE_FORMS = {
     "zygarde-complete": {"types": ["dragon", "ground"], "stats": {"hp": 216, "attack": 100, "defense": 121, "special-attack": 91, "special-defense": 95, "speed": 85}},
     "eiscue-noice": {"types": ["ice"], "stats": {"hp": 75, "attack": 80, "defense": 70, "special-attack": 65, "special-defense": 50, "speed": 130}},
     "palafin-hero": {"types": ["water"], "stats": {"hp": 100, "attack": 160, "defense": 97, "special-attack": 106, "special-defense": 87, "speed": 100}},
+    "terapagos-terastal": {"types": ["normal"], "stats": {"hp": 95, "attack": 95, "defense": 110, "special-attack": 105, "special-defense": 110, "speed": 85}},
 }
 
 # Moves Parental Bond doesn't make hit twice (charge moves, future moves and moves that only work once).
@@ -431,6 +432,11 @@ SKILL_SWAP_BANNED_ABILITIES = {
 # The type each terrain gives a Pokémon with Mimicry.
 MIMICRY_TYPES = {
     "electric-terrain": "electric", "grassy-terrain": "grass", "misty-terrain": "fairy", "psychic-terrain": "psychic",
+}
+
+# The stat Embody Aspect raises for each of Ogerpon's masks. No mask (Teal) raises Speed.
+EMBODY_ASPECT_STATS = {
+    "teal-mask": "speed", "wellspring-mask": "special-defense", "hearthflame-mask": "attack", "cornerstone-mask": "defense",
 }
 
 
@@ -505,12 +511,12 @@ class DamageCalculator:
     def terrain_effects(self):
         return TERRAIN_EFFECTS.get(self.terrain, {})
 
-    # A Pokémon is grounded unless it is a Flying type or has Levitate. Terrain only affects grounded Pokémon.
+    # A Pokémon is grounded unless it is a Flying type or has Levitate or Eelevate. Terrain only affects grounded Pokémon.
     # Will add Air Balloon, Magnet Rise, and Gravity later once items and field moves are in.
     def grounded_attacker(self):
-        return "flying" not in self.attacker.types and "levitate" not in self.attacker_abilities
+        return "flying" not in self.attacker.types and "levitate" not in self.attacker_abilities and "eelevate" not in self.attacker_abilities
     def grounded_defender(self):
-        return "flying" not in self.defender.types and "levitate" not in self.defender_abilities
+        return "flying" not in self.defender.types and "levitate" not in self.defender_abilities and "eelevate" not in self.defender_abilities
 
     # Rain, sun, and their primal versions boost or weaken moves of certain types.
     def weather_move_power(self):
@@ -5186,6 +5192,218 @@ class DamageCalculator:
         if "hospitality" not in self.defender_abilities or not has_ally:
             return 0
         return 0.25
+
+    # Toxic Chain: The Pokémon's damaging moves have a 30% chance of badly poisoning the target. Returns the status that actually sticks.
+    def toxic_chain_ability_attacker(self):
+        if "toxic-chain" not in self.attacker_abilities or self.status_move():
+            return self.status_defender
+        if "shield-dust" in self.defender_abilities or self.type_effectiveness_defender() == 0:
+            return self.status_defender
+        if self.status_effects_defender() or self.status_immune_defender("badly-poison"):
+            return self.status_defender
+        if random.random() < 0.30:
+            return "badly-poison"
+        return self.status_defender
+    def toxic_chain_ability_defender(self):
+        if "toxic-chain" not in self.defender_abilities or self.status_move():
+            return self.status_attacker
+        if "shield-dust" in self.attacker_abilities or self.type_effectiveness_attacker() == 0:
+            return self.status_attacker
+        if self.status_effects_attacker() or self.status_immune_attacker("badly-poison"):
+            return self.status_attacker
+        if random.random() < 0.30:
+            return "badly-poison"
+        return self.status_attacker
+
+    # Embody Aspect: When a Terastallized Ogerpon enters battle, one of its stats goes up 1 stage depending on its mask. Returns the stat that goes up.
+    # held_item = Ogerpon's mask. terastallized = True if it's Terastallized.
+    def embody_aspect_ability_attacker(self, held_item=None, terastallized=False):
+        if "embody-aspect" not in self.attacker_abilities or not self.attacker.name.startswith("ogerpon") or not terastallized:
+            return None
+        return EMBODY_ASPECT_STATS.get(held_item, "speed")
+    def embody_aspect_ability_defender(self, held_item=None, terastallized=False):
+        if "embody-aspect" not in self.defender_abilities or not self.defender.name.startswith("ogerpon") or not terastallized:
+            return None
+        return EMBODY_ASPECT_STATS.get(held_item, "speed")
+
+    # Tera Shift: When Terapagos enters battle, it changes to its Terastal Form. Returns its form name, types and stats.
+    def tera_shift_ability_attacker(self):
+        if "tera-shift" not in self.attacker_abilities or not self.attacker.name.startswith("terapagos"):
+            return self.attacker.name, self.attacker.types, self.attacker.stats
+        form = BATTLE_FORMS["terapagos-terastal"]
+        return "terapagos-terastal", form["types"], form["stats"]
+    def tera_shift_ability_defender(self):
+        if "tera-shift" not in self.defender_abilities or not self.defender.name.startswith("terapagos"):
+            return self.defender.name, self.defender.types, self.defender.stats
+        form = BATTLE_FORMS["terapagos-terastal"]
+        return "terapagos-terastal", form["types"], form["stats"]
+
+    # Tera Shell: When the Pokémon's HP is full, every damaging move that hits it is not very effective. Returns the type effectiveness against it.
+    def tera_shell_ability_attacker(self, current_hp, max_hp):
+        effectiveness = self.type_effectiveness_attacker()
+        if "tera-shell" not in self.attacker_abilities or not self.attacker.name.startswith("terapagos"):
+            return effectiveness
+        if self.status_move() or self.move_name == "struggle" or current_hp < max_hp:
+            return effectiveness
+        if effectiveness < 1:
+            return effectiveness
+        return 0.5
+    def tera_shell_ability_defender(self, current_hp, max_hp):
+        effectiveness = self.type_effectiveness_defender()
+        if "tera-shell" not in self.defender_abilities or not self.defender.name.startswith("terapagos"):
+            return effectiveness
+        if self.status_move() or self.move_name == "struggle" or current_hp < max_hp:
+            return effectiveness
+        if effectiveness < 1:
+            return effectiveness
+        return 0.5
+
+    # Teraform Zero: When Terapagos Terastallizes into its Stellar Form, it clears the weather and terrain. Returns the weather and terrain after.
+    # terastallized = True if it just Terastallized.
+    def teraform_zero_ability_attacker(self, terastallized=False):
+        if "teraform-zero" not in self.attacker_abilities or not self.attacker.name.startswith("terapagos") or not terastallized:
+            return self.weather, self.terrain
+        self.weather = None
+        self.weather_turns = 0
+        self.terrain = None
+        self.terrain_turns = 0
+        return self.weather, self.terrain
+    def teraform_zero_ability_defender(self, terastallized=False):
+        if "teraform-zero" not in self.defender_abilities or not self.defender.name.startswith("terapagos") or not terastallized:
+            return self.weather, self.terrain
+        self.weather = None
+        self.weather_turns = 0
+        self.terrain = None
+        self.terrain_turns = 0
+        return self.weather, self.terrain
+
+    # Poison Puppeteer: When Pecharunt poisons a target with a move, the target also becomes confused. Returns True if the target gets confused.
+    # inflicted_status = the status Pecharunt's move just gave the target.
+    def poison_puppeteer_ability_attacker(self, inflicted_status=None):
+        if "poison-puppeteer" not in self.attacker_abilities or not self.attacker.name.startswith("pecharunt"):
+            return False
+        return inflicted_status in ("poison", "badly-poison")
+    def poison_puppeteer_ability_defender(self, inflicted_status=None):
+        if "poison-puppeteer" not in self.defender_abilities or not self.defender.name.startswith("pecharunt"):
+            return False
+        return inflicted_status in ("poison", "badly-poison")
+
+    # Piercing Drill: The Pokémon's contact moves hit through Protect, but only do 1/4 of the damage. Returns the move's power.
+    # protected = True if the target used Protect or a move like it.
+    def piercing_drill_ability_attacker(self, protected=False):
+        if not protected or not self.move_power:
+            return self.move_power
+        if "piercing-drill" in self.attacker_abilities and self.contact_move():
+            return self.move_power * 0.25
+        return 0
+    def piercing_drill_ability_defender(self, protected=False):
+        if not protected or not self.move_power:
+            return self.move_power
+        if "piercing-drill" in self.defender_abilities and self.contact_move():
+            return self.move_power * 0.25
+        return 0
+
+    # Dragonize: The Pokémon's Normal-type moves become Dragon type and do 20% more damage. Returns the move's type and power.
+    def dragonize_ability_attacker(self):
+        if "dragonize" not in self.attacker_abilities or self.move_type != "normal" or self.move_name in NORMALIZE_EXCEPTIONS:
+            return self.move_type, self.move_power
+        if not self.move_power:
+            return "dragon", self.move_power
+        return "dragon", self.move_power * 1.2
+    def dragonize_ability_defender(self):
+        if "dragonize" not in self.defender_abilities or self.move_type != "normal" or self.move_name in NORMALIZE_EXCEPTIONS:
+            return self.move_type, self.move_power
+        if not self.move_power:
+            return "dragon", self.move_power
+        return "dragon", self.move_power * 1.2
+
+    # Mega Sol: The Pokémon's moves act like the weather is harsh sunlight. Returns the move's power after the weather.
+    def mega_sol_ability_attacker(self):
+        if "mega-sol" not in self.attacker_abilities or not self.move_power:
+            return self.weather_move_power()
+        if self.move_type == "fire":
+            return self.move_power * WEATHER_EFFECTS["sun"]["boost_multiplier"]
+        if self.move_type == "water":
+            return self.move_power * WEATHER_EFFECTS["sun"]["weaken_multiplier"]
+        return self.move_power
+    def mega_sol_ability_defender(self):
+        if "mega-sol" not in self.defender_abilities or not self.move_power:
+            return self.weather_move_power()
+        if self.move_type == "fire":
+            return self.move_power * WEATHER_EFFECTS["sun"]["boost_multiplier"]
+        if self.move_type == "water":
+            return self.move_power * WEATHER_EFFECTS["sun"]["weaken_multiplier"]
+        return self.move_power
+        # Will add sun-based moves like Solar Beam and Weather Ball later.
+
+    # Spicy Spray: When the Pokémon is hit by a damaging move, the attacker gets burned. Returns the status that actually sticks.
+    def spicy_spray_ability_attacker(self):
+        if "spicy-spray" not in self.attacker_abilities or self.status_move() or self.type_effectiveness_attacker() == 0:
+            return self.status_defender
+        if self.status_effects_defender() or self.status_immune_defender("burn"):
+            return self.status_defender
+        return "burn"
+    def spicy_spray_ability_defender(self):
+        if "spicy-spray" not in self.defender_abilities or self.status_move() or self.type_effectiveness_defender() == 0:
+            return self.status_attacker
+        if self.status_effects_attacker() or self.status_immune_attacker("burn"):
+            return self.status_attacker
+        return "burn"
+
+    # Eelevate: Same as Levitate. The Pokémon floats, so Ground-type moves don't affect it.
+    # Eelevate also means the Pokémon isn't grounded (handled in grounded_attacker / grounded_defender).
+    def eelevate_ability_attacker(self):
+        if "eelevate" not in self.attacker_abilities:
+            return self.move_power
+        if self.move_type == "ground" and not self.status_move():
+            return 0
+        return self.move_power
+    def eelevate_ability_defender(self):
+        if "eelevate" not in self.defender_abilities:
+            return self.move_power
+        if self.move_type == "ground" and not self.status_move():
+            return 0
+        return self.move_power
+
+    # Eelevate: Same as Beast Boost. When the Pokémon knocks out another Pokémon with a move, its highest stat goes up 1 stage. Returns the stat that goes up.
+    def eelevate_boost_attacker(self, knocked_out):
+        if "eelevate" not in self.attacker_abilities or not knocked_out:
+            return None
+        stats = ["attack", "defense", "special-attack", "special-defense", "speed"]
+        return max(stats, key=lambda stat: self.attacker.stats[stat])
+    def eelevate_boost_defender(self, knocked_out):
+        if "eelevate" not in self.defender_abilities or not knocked_out:
+            return None
+        stats = ["attack", "defense", "special-attack", "special-defense", "speed"]
+        return max(stats, key=lambda stat: self.defender.stats[stat])
+
+    # Fire Mane: Boosts the power of the Pokémon's Fire-type moves by 50%.
+    def fire_mane_ability_attacker(self):
+        if "fire-mane" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "fire":
+            return self.move_power * 1.5
+        return self.move_power
+    def fire_mane_ability_defender(self):
+        if "fire-mane" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "fire":
+            return self.move_power * 1.5
+        return self.move_power
+
+    # Aura Guard: Contact moves do half damage to the Pokémon.
+    def aura_guard_ability_attacker(self):
+        if "aura-guard" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.contact_move():
+            return self.move_power * 0.5
+        return self.move_power
+    def aura_guard_ability_defender(self):
+        if "aura-guard" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.contact_move():
+            return self.move_power * 0.5
+        return self.move_power
 
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
