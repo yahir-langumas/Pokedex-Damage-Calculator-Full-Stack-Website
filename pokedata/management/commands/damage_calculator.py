@@ -180,7 +180,7 @@ STATUS_IMMUNITY_ABILITIES = {
     "limber": "paralysis", "insomnia": "sleep", "vital-spirit": "sleep",
     "water-veil": "burn", "water-bubble": "burn", "immunity": "poison",
     "pastel-veil": "poison", "magma-armor": "freeze", "own-tempo": "confusion",
-    "comatose": "all", "purifying-salt": "all",
+    "comatose": "all", "purifying-salt": "all", "thermal-exchange": "burn",
 }
 
 # Effects that aren't major statuses but some abilities still block. Since Gen 8, Oblivious, Own Tempo, and Inner Focus also block Intimidate.
@@ -377,6 +377,7 @@ BATTLE_FORMS = {
     "wishiwashi-school": {"types": ["water"], "stats": {"hp": 45, "attack": 140, "defense": 130, "special-attack": 140, "special-defense": 135, "speed": 30}},
     "zygarde-complete": {"types": ["dragon", "ground"], "stats": {"hp": 216, "attack": 100, "defense": 121, "special-attack": 91, "special-defense": 95, "speed": 85}},
     "eiscue-noice": {"types": ["ice"], "stats": {"hp": 75, "attack": 80, "defense": 70, "special-attack": 65, "special-defense": 50, "speed": 130}},
+    "palafin-hero": {"types": ["water"], "stats": {"hp": 100, "attack": 160, "defense": 97, "special-attack": 106, "special-defense": 87, "speed": 100}},
 }
 
 # Moves Parental Bond doesn't make hit twice (charge moves, future moves and moves that only work once).
@@ -4536,6 +4537,376 @@ class DamageCalculator:
         if "curious-medicine" not in self.defender_abilities:
             return ally_stat_stages
         return {}
+
+    # Transistor: Boosts the power of the Pokémon's Electric-type moves by 30%.
+    def transistor_ability_attacker(self):
+        if "transistor" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "electric":
+            return self.move_power * 1.3
+        return self.move_power
+    def transistor_ability_defender(self):
+        if "transistor" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "electric":
+            return self.move_power * 1.3
+        return self.move_power
+
+    # Dragon's Maw: Boosts the power of the Pokémon's Dragon-type moves by 50%.
+    def dragons_maw_ability_attacker(self):
+        if "dragons-maw" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "dragon":
+            return self.move_power * 1.5
+        return self.move_power
+    def dragons_maw_ability_defender(self):
+        if "dragons-maw" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "dragon":
+            return self.move_power * 1.5
+        return self.move_power
+
+    # Chilling Neigh: When the Pokémon knocks out another Pokémon with a move, its Attack goes up 1 stage. Returns the Attack stage change.
+    def chilling_neigh_ability_attacker(self, knocked_out):
+        if "chilling-neigh" not in self.attacker_abilities or not knocked_out:
+            return 0
+        return 1
+    def chilling_neigh_ability_defender(self, knocked_out):
+        if "chilling-neigh" not in self.defender_abilities or not knocked_out:
+            return 0
+        return 1
+
+    # Grim Neigh: When the Pokémon knocks out another Pokémon with a move, its Sp. Atk goes up 1 stage. Returns the Sp. Atk stage change.
+    def grim_neigh_ability_attacker(self, knocked_out):
+        if "grim-neigh" not in self.attacker_abilities or not knocked_out:
+            return 0
+        return 1
+    def grim_neigh_ability_defender(self, knocked_out):
+        if "grim-neigh" not in self.defender_abilities or not knocked_out:
+            return 0
+        return 1
+
+    # As One (Glastrier): Unnerve and Chilling Neigh together. When the Pokémon knocks out another Pokémon with a move, its Attack goes up 1 stage. Returns the Attack stage change.
+    def as_one_glastrier_ability_attacker(self, knocked_out):
+        if "as-one-glastrier" not in self.attacker_abilities or not knocked_out:
+            return 0
+        return 1
+    def as_one_glastrier_ability_defender(self, knocked_out):
+        if "as-one-glastrier" not in self.defender_abilities or not knocked_out:
+            return 0
+        return 1
+
+    # As One (Glastrier): The opposing Pokémon can't eat Berries. Returns the opposing Pokémon's item that still works.
+    def as_one_glastrier_unnerve_attacker(self, opponent_item):
+        if "as-one-glastrier" not in self.attacker_abilities or not opponent_item or not opponent_item.endswith("-berry"):
+            return opponent_item
+        return None
+    def as_one_glastrier_unnerve_defender(self, opponent_item):
+        if "as-one-glastrier" not in self.defender_abilities or not opponent_item or not opponent_item.endswith("-berry"):
+            return opponent_item
+        return None
+
+    # As One (Spectrier): Unnerve and Grim Neigh together. When the Pokémon knocks out another Pokémon with a move, its Sp. Atk goes up 1 stage. Returns the Sp. Atk stage change.
+    def as_one_spectrier_ability_attacker(self, knocked_out):
+        if "as-one-spectrier" not in self.attacker_abilities or not knocked_out:
+            return 0
+        return 1
+    def as_one_spectrier_ability_defender(self, knocked_out):
+        if "as-one-spectrier" not in self.defender_abilities or not knocked_out:
+            return 0
+        return 1
+
+    # As One (Spectrier): The opposing Pokémon can't eat Berries. Returns the opposing Pokémon's item that still works.
+    def as_one_spectrier_unnerve_attacker(self, opponent_item):
+        if "as-one-spectrier" not in self.attacker_abilities or not opponent_item or not opponent_item.endswith("-berry"):
+            return opponent_item
+        return None
+    def as_one_spectrier_unnerve_defender(self, opponent_item):
+        if "as-one-spectrier" not in self.defender_abilities or not opponent_item or not opponent_item.endswith("-berry"):
+            return opponent_item
+        return None
+
+    # Lingering Aroma: Same as Mummy. When the Pokémon is hit by a contact move, the attacker's ability becomes Lingering Aroma. Returns the attacker's abilities after.
+    def lingering_aroma_ability_attacker(self):
+        if "lingering-aroma" not in self.attacker_abilities or not self.contact_move():
+            return self.defender_abilities
+        for ability in self.defender_abilities:
+            if ability in CANT_SUPPRESS_ABILITIES or ability == "lingering-aroma":
+                return self.defender_abilities
+        return ["lingering-aroma"]
+    def lingering_aroma_ability_defender(self):
+        if "lingering-aroma" not in self.defender_abilities or not self.contact_move():
+            return self.attacker_abilities
+        for ability in self.attacker_abilities:
+            if ability in CANT_SUPPRESS_ABILITIES or ability == "lingering-aroma":
+                return self.attacker_abilities
+        return ["lingering-aroma"]
+
+    # Seed Sower: When the Pokémon is hit by a damaging move, it sets Grassy Terrain for 5 turns. Returns the terrain.
+    def seed_sower_ability_attacker(self):
+        if "seed-sower" not in self.attacker_abilities or self.status_move() or self.type_effectiveness_attacker() == 0:
+            return self.terrain
+        if self.terrain == "grassy-terrain":
+            return self.terrain
+        self.terrain = "grassy-terrain"
+        self.terrain_turns = TERRAIN_EFFECTS["grassy-terrain"]["turns"]
+        return self.terrain
+    def seed_sower_ability_defender(self):
+        if "seed-sower" not in self.defender_abilities or self.status_move() or self.type_effectiveness_defender() == 0:
+            return self.terrain
+        if self.terrain == "grassy-terrain":
+            return self.terrain
+        self.terrain = "grassy-terrain"
+        self.terrain_turns = TERRAIN_EFFECTS["grassy-terrain"]["turns"]
+        return self.terrain
+
+    # Thermal Exchange: When the Pokémon is hit by a Fire-type move, its Attack goes up 1 stage. Returns the Attack stage change.
+    def thermal_exchange_ability_attacker(self):
+        if "thermal-exchange" not in self.attacker_abilities or self.move_type != "fire" or self.status_move():
+            return 0
+        return 1
+    def thermal_exchange_ability_defender(self):
+        if "thermal-exchange" not in self.defender_abilities or self.move_type != "fire" or self.status_move():
+            return 0
+        return 1
+
+    # Thermal Exchange: The Pokémon can't be burned. Returns the status that actually sticks.
+    def thermal_exchange_status_attacker(self):
+        if "thermal-exchange" not in self.attacker_abilities:
+            return self.status_attacker
+        if self.status_attacker == STATUS_IMMUNITY_ABILITIES["thermal-exchange"]:
+            return None
+        return self.status_attacker
+    def thermal_exchange_status_defender(self):
+        if "thermal-exchange" not in self.defender_abilities:
+            return self.status_defender
+        if self.status_defender == STATUS_IMMUNITY_ABILITIES["thermal-exchange"]:
+            return None
+        return self.status_defender
+
+    # Anger Shell: When a hit drops the Pokémon's HP to 1/2 or less, its Attack, Sp. Atk and Speed go up 1 stage, but its Defense and Sp. Def go down 1 stage. Returns the stage changes.
+    # damage = the dmg from the hit. current_hp = its HP before the hit.
+    def anger_shell_ability_attacker(self, damage, current_hp, max_hp):
+        if "anger-shell" not in self.attacker_abilities:
+            return {}
+        hp_after = current_hp - damage
+        if 0 < hp_after <= max_hp / 2 and current_hp > max_hp / 2:
+            return {"attack": 1, "special-attack": 1, "speed": 1, "defense": -1, "special-defense": -1}
+        return {}
+    def anger_shell_ability_defender(self, damage, current_hp, max_hp):
+        if "anger-shell" not in self.defender_abilities:
+            return {}
+        hp_after = current_hp - damage
+        if 0 < hp_after <= max_hp / 2 and current_hp > max_hp / 2:
+            return {"attack": 1, "special-attack": 1, "speed": 1, "defense": -1, "special-defense": -1}
+        return {}
+
+    # Purifying Salt: Ghost-type moves do half damage to the Pokémon.
+    # Purifying Salt's status immunity is in STATUS_IMMUNITY_ABILITIES.
+    def purifying_salt_ability_attacker(self):
+        if "purifying-salt" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "ghost":
+            return self.move_power * 0.5
+        return self.move_power
+    def purifying_salt_ability_defender(self):
+        if "purifying-salt" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "ghost":
+            return self.move_power * 0.5
+        return self.move_power
+
+    # Well-Baked Body: Fire moves don't affect the Pokémon. Instead they raise its Defense by 2 stages.
+    def well_baked_body_ability_attacker(self):
+        if "well-baked-body" not in self.attacker_abilities or self.move_type != "fire":
+            return self.move_power, 0
+        return 0, 2
+    def well_baked_body_ability_defender(self):
+        if "well-baked-body" not in self.defender_abilities or self.move_type != "fire":
+            return self.move_power, 0
+        return 0, 2
+
+    # Wind Rider: Wind moves don't affect the Pokémon. Instead they raise its Attack by 1 stage.
+    def wind_rider_ability_attacker(self):
+        if "wind-rider" not in self.attacker_abilities or not self.wind_move():
+            return self.move_power, 0
+        return 0, 1
+    def wind_rider_ability_defender(self):
+        if "wind-rider" not in self.defender_abilities or not self.wind_move():
+            return self.move_power, 0
+        return 0, 1
+        # Will add the Attack boost from Tailwind later once Tailwind is in.
+
+    # Guard Dog: The Pokémon can't be forced out by Roar, Whirlwind, Dragon Tail or Circle Throw. Returns True if the move forces this Pokémon out.
+    # Guard Dog's Intimidate boost is in intimidate_ability.
+    def guard_dog_ability_attacker(self):
+        if not self.force_switch_move():
+            return False
+        return "guard-dog" not in self.attacker_abilities
+    def guard_dog_ability_defender(self):
+        if not self.force_switch_move():
+            return False
+        return "guard-dog" not in self.defender_abilities
+
+    # Rocky Payload: Boosts the power of the Pokémon's Rock-type moves by 50%.
+    def rocky_payload_ability_attacker(self):
+        if "rocky-payload" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "rock":
+            return self.move_power * 1.5
+        return self.move_power
+    def rocky_payload_ability_defender(self):
+        if "rocky-payload" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.move_type == "rock":
+            return self.move_power * 1.5
+        return self.move_power
+
+    # Wind Power: When the Pokémon is hit by a wind move, it becomes charged. Returns True if it becomes charged.
+    def wind_power_ability_attacker(self):
+        if "wind-power" not in self.attacker_abilities or not self.wind_move() or self.status_move():
+            return False
+        return True
+    def wind_power_ability_defender(self):
+        if "wind-power" not in self.defender_abilities or not self.wind_move() or self.status_move():
+            return False
+        return True
+        # Will add getting charged from Tailwind later once Tailwind is in.
+
+    # Charge: Once the Pokémon is charged (from Wind Power, Electromorphosis or the move Charge), its next Electric-type move does double damage.
+    # charged = True if the Pokémon is charged.
+    def charge_move_power_attacker(self, charged=False):
+        if not charged or not self.move_power or self.move_type != "electric":
+            return self.move_power
+        return self.move_power * 2
+    def charge_move_power_defender(self, charged=False):
+        if not charged or not self.move_power or self.move_type != "electric":
+            return self.move_power
+        return self.move_power * 2
+
+    # Zero to Hero: When Palafin switches out, it changes to Hero Form and stays that way for the rest of the battle. Returns its form name, types and stats.
+    # switched_out_before = True if it already switched out once this battle.
+    def zero_to_hero_ability_attacker(self, switched_out_before=False):
+        if "zero-to-hero" not in self.attacker_abilities or not self.attacker.name.startswith("palafin") or not switched_out_before:
+            return self.attacker.name, self.attacker.types, self.attacker.stats
+        form = BATTLE_FORMS["palafin-hero"]
+        return "palafin-hero", form["types"], form["stats"]
+    def zero_to_hero_ability_defender(self, switched_out_before=False):
+        if "zero-to-hero" not in self.defender_abilities or not self.defender.name.startswith("palafin") or not switched_out_before:
+            return self.defender.name, self.defender.types, self.defender.stats
+        form = BATTLE_FORMS["palafin-hero"]
+        return "palafin-hero", form["types"], form["stats"]
+
+    # Commander: In a double battle, Tatsugiri jumps into its ally Dondozo's mouth and Dondozo's stats all go up 2 stages. Returns Dondozo's stage changes.
+    # ally_name = the name of the Pokémon's ally.
+    def commander_ability_attacker(self, ally_name=None):
+        if "commander" not in self.attacker_abilities or not self.attacker.name.startswith("tatsugiri"):
+            return {}
+        if not ally_name or not ally_name.startswith("dondozo"):
+            return {}
+        return {"attack": 2, "defense": 2, "special-attack": 2, "special-defense": 2, "speed": 2}
+    def commander_ability_defender(self, ally_name=None):
+        if "commander" not in self.defender_abilities or not self.defender.name.startswith("tatsugiri"):
+            return {}
+        if not ally_name or not ally_name.startswith("dondozo"):
+            return {}
+        return {"attack": 2, "defense": 2, "special-attack": 2, "special-defense": 2, "speed": 2}
+
+    # Electromorphosis: When the Pokémon is hit by a damaging move, it becomes charged. Returns True if it becomes charged.
+    def electromorphosis_ability_attacker(self):
+        if "electromorphosis" not in self.attacker_abilities or self.status_move():
+            return False
+        return self.type_effectiveness_attacker() > 0
+    def electromorphosis_ability_defender(self):
+        if "electromorphosis" not in self.defender_abilities or self.status_move():
+            return False
+        return self.type_effectiveness_defender() > 0
+
+    # Protosynthesis: In harsh sunlight or with Booster Energy, the Pokémon's highest stat goes up 30% (50% if it's Speed). Returns the stat that goes up and how much.
+    # booster_energy = True if it used Booster Energy.
+    def protosynthesis_ability_attacker(self, booster_energy=False):
+        if "protosynthesis" not in self.attacker_abilities:
+            return None, 1
+        if self.current_weather() != "sun" and not booster_energy:
+            return None, 1
+        stats = ["attack", "defense", "special-attack", "special-defense", "speed"]
+        best_stat = max(stats, key=lambda stat: self.attacker.stats[stat])
+        if best_stat == "speed":
+            return best_stat, 1.5
+        return best_stat, 1.3
+    def protosynthesis_ability_defender(self, booster_energy=False):
+        if "protosynthesis" not in self.defender_abilities:
+            return None, 1
+        if self.current_weather() != "sun" and not booster_energy:
+            return None, 1
+        stats = ["attack", "defense", "special-attack", "special-defense", "speed"]
+        best_stat = max(stats, key=lambda stat: self.defender.stats[stat])
+        if best_stat == "speed":
+            return best_stat, 1.5
+        return best_stat, 1.3
+
+    # Quark Drive: In Electric Terrain or with Booster Energy, the Pokémon's highest stat goes up 30% (50% if it's Speed). Returns the stat that goes up and how much.
+    # booster_energy = True if it used Booster Energy.
+    def quark_drive_ability_attacker(self, booster_energy=False):
+        if "quark-drive" not in self.attacker_abilities:
+            return None, 1
+        if self.terrain != "electric-terrain" and not booster_energy:
+            return None, 1
+        stats = ["attack", "defense", "special-attack", "special-defense", "speed"]
+        best_stat = max(stats, key=lambda stat: self.attacker.stats[stat])
+        if best_stat == "speed":
+            return best_stat, 1.5
+        return best_stat, 1.3
+    def quark_drive_ability_defender(self, booster_energy=False):
+        if "quark-drive" not in self.defender_abilities:
+            return None, 1
+        if self.terrain != "electric-terrain" and not booster_energy:
+            return None, 1
+        stats = ["attack", "defense", "special-attack", "special-defense", "speed"]
+        best_stat = max(stats, key=lambda stat: self.defender.stats[stat])
+        if best_stat == "speed":
+            return best_stat, 1.5
+        return best_stat, 1.3
+
+    # Good as Gold: Status moves from other Pokémon don't affect the Pokémon. Returns True if the move is blocked.
+    def good_as_gold_ability_attacker(self):
+        if "good-as-gold" not in self.attacker_abilities:
+            return False
+        return self.move_name in TARGETED_STATUS_MOVES
+    def good_as_gold_ability_defender(self):
+        if "good-as-gold" not in self.defender_abilities:
+            return False
+        return self.move_name in TARGETED_STATUS_MOVES
+
+    # Vessel of Ruin: Lowers the Sp. Atk of every other Pokémon by 25%. Returns the opposing Pokémon's Sp. Atk.
+    def vessel_of_ruin_ability_attacker(self):
+        if "vessel-of-ruin" not in self.attacker_abilities or "vessel-of-ruin" in self.defender_abilities:
+            return self.defender.stats["special-attack"]
+        return self.defender.stats["special-attack"] * 0.75
+    def vessel_of_ruin_ability_defender(self):
+        if "vessel-of-ruin" not in self.defender_abilities or "vessel-of-ruin" in self.attacker_abilities:
+            return self.attacker.stats["special-attack"]
+        return self.attacker.stats["special-attack"] * 0.75
+
+    # Sword of Ruin: Lowers the Defense of every other Pokémon by 25%. Returns the opposing Pokémon's Defense.
+    def sword_of_ruin_ability_attacker(self):
+        if "sword-of-ruin" not in self.attacker_abilities or "sword-of-ruin" in self.defender_abilities:
+            return self.defender.stats["defense"]
+        return self.defender.stats["defense"] * 0.75
+    def sword_of_ruin_ability_defender(self):
+        if "sword-of-ruin" not in self.defender_abilities or "sword-of-ruin" in self.attacker_abilities:
+            return self.attacker.stats["defense"]
+        return self.attacker.stats["defense"] * 0.75
+
+    # Tablets of Ruin: Lowers the Attack of every other Pokémon by 25%. Returns the opposing Pokémon's Attack.
+    def tablets_of_ruin_ability_attacker(self):
+        if "tablets-of-ruin" not in self.attacker_abilities or "tablets-of-ruin" in self.defender_abilities:
+            return self.defender.stats["attack"]
+        return self.defender.stats["attack"] * 0.75
+    def tablets_of_ruin_ability_defender(self):
+        if "tablets-of-ruin" not in self.defender_abilities or "tablets-of-ruin" in self.attacker_abilities:
+            return self.attacker.stats["attack"]
+        return self.attacker.stats["attack"] * 0.75
 
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
