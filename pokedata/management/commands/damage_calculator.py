@@ -4014,6 +4014,138 @@ class DamageCalculator:
         self.terrain_turns = TERRAIN_EFFECTS["electric-terrain"]["turns"]
         return self.terrain
 
+    # Psychic Surge: Sets Psychic Terrain for 5 turns when the Pokémon enters battle. Returns the terrain.
+    def psychic_surge_ability_attacker(self):
+        if "psychic-surge" not in self.attacker_abilities or self.terrain == "psychic-terrain":
+            return self.terrain
+        self.terrain = "psychic-terrain"
+        self.terrain_turns = TERRAIN_EFFECTS["psychic-terrain"]["turns"]
+        return self.terrain
+    def psychic_surge_ability_defender(self):
+        if "psychic-surge" not in self.defender_abilities or self.terrain == "psychic-terrain":
+            return self.terrain
+        self.terrain = "psychic-terrain"
+        self.terrain_turns = TERRAIN_EFFECTS["psychic-terrain"]["turns"]
+        return self.terrain
+
+    # Misty Surge: Sets Misty Terrain for 5 turns when the Pokémon enters battle. Returns the terrain.
+    def misty_surge_ability_attacker(self):
+        if "misty-surge" not in self.attacker_abilities or self.terrain == "misty-terrain":
+            return self.terrain
+        self.terrain = "misty-terrain"
+        self.terrain_turns = TERRAIN_EFFECTS["misty-terrain"]["turns"]
+        return self.terrain
+    def misty_surge_ability_defender(self):
+        if "misty-surge" not in self.defender_abilities or self.terrain == "misty-terrain":
+            return self.terrain
+        self.terrain = "misty-terrain"
+        self.terrain_turns = TERRAIN_EFFECTS["misty-terrain"]["turns"]
+        return self.terrain
+
+    # Grassy Surge: Sets Grassy Terrain for 5 turns when the Pokémon enters battle. Returns the terrain.
+    def grassy_surge_ability_attacker(self):
+        if "grassy-surge" not in self.attacker_abilities or self.terrain == "grassy-terrain":
+            return self.terrain
+        self.terrain = "grassy-terrain"
+        self.terrain_turns = TERRAIN_EFFECTS["grassy-terrain"]["turns"]
+        return self.terrain
+    def grassy_surge_ability_defender(self):
+        if "grassy-surge" not in self.defender_abilities or self.terrain == "grassy-terrain":
+            return self.terrain
+        self.terrain = "grassy-terrain"
+        self.terrain_turns = TERRAIN_EFFECTS["grassy-terrain"]["turns"]
+        return self.terrain
+
+    # Full Metal Body: Same as Clear Body, but Mold Breaker can't ignore it. Other Pokémon's moves and abilities can't lower this Pokémon's stats.
+    # stage_change = how many stages the stat is changing. Returns the stage change that actually happens.
+    def full_metal_body_ability_attacker(self, stage_change, from_opponent=True):
+        if "full-metal-body" not in self.attacker_abilities:
+            return stage_change
+        if stage_change < 0 and from_opponent:
+            return 0
+        return stage_change
+    def full_metal_body_ability_defender(self, stage_change, from_opponent=True):
+        if "full-metal-body" not in self.defender_abilities:
+            return stage_change
+        if stage_change < 0 and from_opponent:
+            return 0
+        return stage_change
+
+    # Shadow Shield: Same as Multiscale, but Mold Breaker can't ignore it. Halves the damage the Pokémon takes when its HP is full.
+    def shadow_shield_ability_attacker(self, current_hp, max_hp):
+        if "shadow-shield" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if current_hp >= max_hp:
+            return self.move_power * 0.5
+        return self.move_power
+    def shadow_shield_ability_defender(self, current_hp, max_hp):
+        if "shadow-shield" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if current_hp >= max_hp:
+            return self.move_power * 0.5
+        return self.move_power
+
+    # Prism Armor: Same as Filter, but Mold Breaker can't ignore it. Reduces the damage taken from super-effective moves to 75%.
+    def prism_armor_ability_attacker(self):
+        if "prism-armor" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.type_effectiveness_attacker() > 1:
+            return self.move_power * 0.75
+        return self.move_power
+    def prism_armor_ability_defender(self):
+        if "prism-armor" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.type_effectiveness_defender() > 1:
+            return self.move_power * 0.75
+        return self.move_power
+
+    # Neuroforce: The Pokémon's super-effective moves do 25% more damage.
+    def neuroforce_ability_attacker(self):
+        if "neuroforce" not in self.attacker_abilities or not self.move_power:
+            return self.move_power
+        if self.type_effectiveness_defender() > 1:
+            return self.move_power * 1.25
+        return self.move_power
+    def neuroforce_ability_defender(self):
+        if "neuroforce" not in self.defender_abilities or not self.move_power:
+            return self.move_power
+        if self.type_effectiveness_attacker() > 1:
+            return self.move_power * 1.25
+        return self.move_power
+
+    # Intrepid Sword: The first time the Pokémon enters battle, its Attack goes up 1 stage. Returns the Attack stage change.
+    # already_used = True if it already went off this battle.
+    def intrepid_sword_ability_attacker(self, already_used=False):
+        if "intrepid-sword" not in self.attacker_abilities or already_used:
+            return 0
+        return 1
+    def intrepid_sword_ability_defender(self, already_used=False):
+        if "intrepid-sword" not in self.defender_abilities or already_used:
+            return 0
+        return 1
+
+    # Dauntless Shield: The first time the Pokémon enters battle, its Defense goes up 1 stage. Returns the Defense stage change.
+    # already_used = True if it already went off this battle.
+    def dauntless_shield_ability_attacker(self, already_used=False):
+        if "dauntless-shield" not in self.attacker_abilities or already_used:
+            return 0
+        return 1
+    def dauntless_shield_ability_defender(self, already_used=False):
+        if "dauntless-shield" not in self.defender_abilities or already_used:
+            return 0
+        return 1
+
+    # Libero: Same as Protean. The Pokémon's type changes to the type of the move it's about to use. It only works once each time it enters battle. Returns its types.
+    # already_used = True if Libero already changed its type since it came in.
+    def libero_ability_attacker(self, already_used=False):
+        if "libero" not in self.attacker_abilities or already_used:
+            return self.attacker.types
+        return [self.move_type]
+    def libero_ability_defender(self, already_used=False):
+        if "libero" not in self.defender_abilities or already_used:
+            return self.defender.types
+        return [self.move_type]
+
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
     # Will add after finishing abilities 
