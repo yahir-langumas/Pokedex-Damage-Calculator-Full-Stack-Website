@@ -442,7 +442,8 @@ EMBODY_ASPECT_STATS = {
 
 class DamageCalculator:
     # attacker_ability and defender_ability = the ability each Pokémon is using. If it's not given, it uses the Pokémon's first ability.
-    def __init__(self, attacker: Species, defender: Species, move_type: str, move_power: int, move_name: str, status_effect_attacker: str, status_effect_defender: str, weather: str = None, terrain: str = None, attacker_ability: str = None, defender_ability: str = None):
+    # attacker_item and defender_item = the item each Pokémon is holding. If it's not given, the Pokémon isn't holding anything.
+    def __init__(self, attacker: Species, defender: Species, move_type: str, move_power: int, move_name: str, status_effect_attacker: str, status_effect_defender: str, weather: str = None, terrain: str = None, attacker_ability: str = None, defender_ability: str = None, attacker_item: str = None, defender_item: str = None):
         self.attacker = attacker
         self.defender = defender
         self.move_type = move_type
@@ -461,6 +462,8 @@ class DamageCalculator:
         self.terrain_turns = TERRAIN_EFFECTS[terrain]["turns"] if terrain in TERRAIN_EFFECTS else 0
         self.attacker_abilities = [attacker_ability or self.attacker.abilities[0]]
         self.defender_abilities = [defender_ability or self.defender.abilities[0]]
+        self.attacker_item = attacker_item
+        self.defender_item = defender_item
 
     def status_effects_attacker(self):
         return self.status_attacker in STATUS_EFFECTS
@@ -5239,20 +5242,29 @@ class DamageCalculator:
         return "terapagos-terastal", form["types"], form["stats"]
 
     # Tera Shell: When the Pokémon's HP is full, every damaging move that hits it is not very effective. Returns the type effectiveness against it.
-    def tera_shell_ability_attacker(self, current_hp, max_hp):
+    # first_hit_resisted = True if Tera Shell already resisted the first hit of this multi-hit move. The rest of the hits are resisted too.
+    def tera_shell_ability_attacker(self, current_hp, max_hp, first_hit_resisted=False):
         effectiveness = self.type_effectiveness_attacker()
         if "tera-shell" not in self.attacker_abilities or not self.attacker.name.startswith("terapagos"):
             return effectiveness
-        if self.status_move() or self.move_name == "struggle" or current_hp < max_hp:
+        if self.status_move() or self.move_name == "struggle":
+            return effectiveness
+        if first_hit_resisted:
+            return 0.5
+        if current_hp < max_hp:
             return effectiveness
         if effectiveness < 1:
             return effectiveness
         return 0.5
-    def tera_shell_ability_defender(self, current_hp, max_hp):
+    def tera_shell_ability_defender(self, current_hp, max_hp, first_hit_resisted=False):
         effectiveness = self.type_effectiveness_defender()
         if "tera-shell" not in self.defender_abilities or not self.defender.name.startswith("terapagos"):
             return effectiveness
-        if self.status_move() or self.move_name == "struggle" or current_hp < max_hp:
+        if self.status_move() or self.move_name == "struggle":
+            return effectiveness
+        if first_hit_resisted:
+            return 0.5
+        if current_hp < max_hp:
             return effectiveness
         if effectiveness < 1:
             return effectiveness
@@ -5318,10 +5330,11 @@ class DamageCalculator:
         return "dragon", self.move_power * 1.2
 
     # Mega Sol: The Pokémon's moves act like the weather is harsh sunlight. Returns the move's power after the weather.
+    # Hydro Steam gets the sun boost like a Fire move instead of being weakened.
     def mega_sol_ability_attacker(self):
         if "mega-sol" not in self.attacker_abilities or not self.move_power:
             return self.weather_move_power()
-        if self.move_type == "fire":
+        if self.move_type == "fire" or self.move_name == "hydro-steam":
             return self.move_power * WEATHER_EFFECTS["sun"]["boost_multiplier"]
         if self.move_type == "water":
             return self.move_power * WEATHER_EFFECTS["sun"]["weaken_multiplier"]
@@ -5329,7 +5342,7 @@ class DamageCalculator:
     def mega_sol_ability_defender(self):
         if "mega-sol" not in self.defender_abilities or not self.move_power:
             return self.weather_move_power()
-        if self.move_type == "fire":
+        if self.move_type == "fire" or self.move_name == "hydro-steam":
             return self.move_power * WEATHER_EFFECTS["sun"]["boost_multiplier"]
         if self.move_type == "water":
             return self.move_power * WEATHER_EFFECTS["sun"]["weaken_multiplier"]
@@ -5391,23 +5404,206 @@ class DamageCalculator:
             return self.move_power * 1.5
         return self.move_power
 
-    # Aura Guard: Contact moves do half damage to the Pokémon.
+    # Aura Guard: Contact moves do half damage to the Pokémon. Moves from a Pokémon with Long Reach don't make contact, so they do full damage.
     def aura_guard_ability_attacker(self):
         if "aura-guard" not in self.attacker_abilities or not self.move_power:
             return self.move_power
-        if self.contact_move():
+        if self.contact_move() and "long-reach" not in self.defender_abilities:
             return self.move_power * 0.5
         return self.move_power
     def aura_guard_ability_defender(self):
         if "aura-guard" not in self.defender_abilities or not self.move_power:
             return self.move_power
-        if self.contact_move():
+        if self.contact_move() and "long-reach" not in self.attacker_abilities:
             return self.move_power * 0.5
         return self.move_power
 
     # -------- Items -------- 
     # Items can be held by a Pokémon to boost its stats, change its type, or give it immunity to certain moves. Some items are consumed after one use, while others last until the Pokémon switches out or faints.
-    # Will add after finishing abilities 
+
+    # The item each Pokémon is holding that still works. Klutz stops a Pokémon from using its item.
+    def held_item_attacker(self):
+        return self.klutz_ability_attacker(self.attacker_item)
+    def held_item_defender(self):
+        return self.klutz_ability_defender(self.defender_item)
+
+    # The Berry each Pokémon can eat. Unnerve and As One on the other Pokémon stop it from eating Berries.
+    def held_berry_attacker(self):
+        berry = self.held_item_attacker()
+        berry = self.unnerve_ability_defender(berry)
+        berry = self.as_one_glastrier_unnerve_defender(berry)
+        berry = self.as_one_spectrier_unnerve_defender(berry)
+        return berry
+    def held_berry_defender(self):
+        berry = self.held_item_defender()
+        berry = self.unnerve_ability_attacker(berry)
+        berry = self.as_one_glastrier_unnerve_attacker(berry)
+        berry = self.as_one_spectrier_unnerve_attacker(berry)
+        return berry
+
+    # Berry Juice: When the Pokémon's HP drops to 1/2 or less, it drinks the Berry Juice and heals 20 HP. Returns how much HP it heals.
+    def berry_juice_item_attacker(self, current_hp, max_hp):
+        if self.held_item_attacker() != "berry-juice" or current_hp > max_hp / 2 or current_hp <= 0:
+            return 0
+        return min(20, max_hp - current_hp)
+    def berry_juice_item_defender(self, current_hp, max_hp):
+        if self.held_item_defender() != "berry-juice" or current_hp > max_hp / 2 or current_hp <= 0:
+            return 0
+        return min(20, max_hp - current_hp)
+
+    # Griseous Orb: Boosts the power of Giratina's Ghost and Dragon-type moves by 20%.
+    def griseous_orb_item_attacker(self):
+        if self.held_item_attacker() != "griseous-orb" or self.attacker.pokedex_id != 487 or not self.move_power:
+            return self.move_power
+        if self.move_type in ("ghost", "dragon"):
+            return self.move_power * 1.2
+        return self.move_power
+    def griseous_orb_item_defender(self):
+        if self.held_item_defender() != "griseous-orb" or self.defender.pokedex_id != 487 or not self.move_power:
+            return self.move_power
+        if self.move_type in ("ghost", "dragon"):
+            return self.move_power * 1.2
+        return self.move_power
+
+    # Douse Drive: Genesect's Techno Blast becomes Water type. Returns the move's type.
+    def douse_drive_item_attacker(self):
+        if self.held_item_attacker() != "douse-drive" or self.attacker.pokedex_id != 649 or self.move_name != "techno-blast":
+            return self.move_type
+        return "water"
+    def douse_drive_item_defender(self):
+        if self.held_item_defender() != "douse-drive" or self.defender.pokedex_id != 649 or self.move_name != "techno-blast":
+            return self.move_type
+        return "water"
+
+    # Shock Drive: Genesect's Techno Blast becomes Electric type. Returns the move's type.
+    def shock_drive_item_attacker(self):
+        if self.held_item_attacker() != "shock-drive" or self.attacker.pokedex_id != 649 or self.move_name != "techno-blast":
+            return self.move_type
+        return "electric"
+    def shock_drive_item_defender(self):
+        if self.held_item_defender() != "shock-drive" or self.defender.pokedex_id != 649 or self.move_name != "techno-blast":
+            return self.move_type
+        return "electric"
+
+    # Burn Drive: Genesect's Techno Blast becomes Fire type. Returns the move's type.
+    def burn_drive_item_attacker(self):
+        if self.held_item_attacker() != "burn-drive" or self.attacker.pokedex_id != 649 or self.move_name != "techno-blast":
+            return self.move_type
+        return "fire"
+    def burn_drive_item_defender(self):
+        if self.held_item_defender() != "burn-drive" or self.defender.pokedex_id != 649 or self.move_name != "techno-blast":
+            return self.move_type
+        return "fire"
+
+    # Chill Drive: Genesect's Techno Blast becomes Ice type. Returns the move's type.
+    def chill_drive_item_attacker(self):
+        if self.held_item_attacker() != "chill-drive" or self.attacker.pokedex_id != 649 or self.move_name != "techno-blast":
+            return self.move_type
+        return "ice"
+    def chill_drive_item_defender(self):
+        if self.held_item_defender() != "chill-drive" or self.defender.pokedex_id != 649 or self.move_name != "techno-blast":
+            return self.move_type
+        return "ice"
+
+    # Adamant Orb: Boosts the power of Dialga's Steel and Dragon-type moves by 20%.
+    def adamant_orb_item_attacker(self):
+        if self.held_item_attacker() != "adamant-orb" or self.attacker.pokedex_id != 483 or not self.move_power:
+            return self.move_power
+        if self.move_type in ("steel", "dragon"):
+            return self.move_power * 1.2
+        return self.move_power
+    def adamant_orb_item_defender(self):
+        if self.held_item_defender() != "adamant-orb" or self.defender.pokedex_id != 483 or not self.move_power:
+            return self.move_power
+        if self.move_type in ("steel", "dragon"):
+            return self.move_power * 1.2
+        return self.move_power
+
+    # Lustrous Orb: Boosts the power of Palkia's Water and Dragon-type moves by 20%.
+    def lustrous_orb_item_attacker(self):
+        if self.held_item_attacker() != "lustrous-orb" or self.attacker.pokedex_id != 484 or not self.move_power:
+            return self.move_power
+        if self.move_type in ("water", "dragon"):
+            return self.move_power * 1.2
+        return self.move_power
+    def lustrous_orb_item_defender(self):
+        if self.held_item_defender() != "lustrous-orb" or self.defender.pokedex_id != 484 or not self.move_power:
+            return self.move_power
+        if self.move_type in ("water", "dragon"):
+            return self.move_power * 1.2
+        return self.move_power
+
+    # Cheri Berry: If the Pokémon is paralyzed, it eats the Berry and is cured. Returns the status after.
+    def cheri_berry_item_attacker(self):
+        if self.held_berry_attacker() != "cheri-berry" or self.status_attacker != "paralysis":
+            return self.status_attacker
+        return None
+    def cheri_berry_item_defender(self):
+        if self.held_berry_defender() != "cheri-berry" or self.status_defender != "paralysis":
+            return self.status_defender
+        return None
+
+    # Chesto Berry: If the Pokémon falls asleep, it eats the Berry and wakes up. Returns the status after.
+    def chesto_berry_item_attacker(self):
+        if self.held_berry_attacker() != "chesto-berry" or self.status_attacker != "sleep":
+            return self.status_attacker
+        return None
+    def chesto_berry_item_defender(self):
+        if self.held_berry_defender() != "chesto-berry" or self.status_defender != "sleep":
+            return self.status_defender
+        return None
+
+    # Pecha Berry: If the Pokémon is poisoned, it eats the Berry and is cured. Returns the status after.
+    def pecha_berry_item_attacker(self):
+        if self.held_berry_attacker() != "pecha-berry" or self.status_attacker not in ("poison", "badly-poison"):
+            return self.status_attacker
+        return None
+    def pecha_berry_item_defender(self):
+        if self.held_berry_defender() != "pecha-berry" or self.status_defender not in ("poison", "badly-poison"):
+            return self.status_defender
+        return None
+
+    # Rawst Berry: If the Pokémon is burned, it eats the Berry and is cured. Returns the status after.
+    def rawst_berry_item_attacker(self):
+        if self.held_berry_attacker() != "rawst-berry" or self.status_attacker != "burn":
+            return self.status_attacker
+        return None
+    def rawst_berry_item_defender(self):
+        if self.held_berry_defender() != "rawst-berry" or self.status_defender != "burn":
+            return self.status_defender
+        return None
+
+    # Aspear Berry: If the Pokémon is frozen, it eats the Berry and thaws out. Returns the status after.
+    def aspear_berry_item_attacker(self):
+        if self.held_berry_attacker() != "aspear-berry" or self.status_attacker != "freeze":
+            return self.status_attacker
+        return None
+    def aspear_berry_item_defender(self):
+        if self.held_berry_defender() != "aspear-berry" or self.status_defender != "freeze":
+            return self.status_defender
+        return None
+
+    # Leppa Berry: When one of the Pokémon's moves runs out of PP, it eats the Berry and restores 10 PP to that move. Returns the move's PP after.
+    # move_pp = the move's current PP.
+    def leppa_berry_item_attacker(self, move_pp):
+        if self.held_berry_attacker() != "leppa-berry" or move_pp > 0:
+            return move_pp
+        return min(move_pp + self.ripen_ability_attacker(10), self.move_data.pp)
+    def leppa_berry_item_defender(self, move_pp):
+        if self.held_berry_defender() != "leppa-berry" or move_pp > 0:
+            return move_pp
+        return min(move_pp + self.ripen_ability_defender(10), self.move_data.pp)
+
+    # Oran Berry: When the Pokémon's HP drops to 1/2 or less, it eats the Berry and heals 10 HP. Returns how much HP it heals.
+    def oran_berry_item_attacker(self, current_hp, max_hp):
+        if self.held_berry_attacker() != "oran-berry" or current_hp > max_hp / 2 or current_hp <= 0:
+            return 0
+        return min(self.ripen_ability_attacker(10), max_hp - current_hp)
+    def oran_berry_item_defender(self, current_hp, max_hp):
+        if self.held_berry_defender() != "oran-berry" or current_hp > max_hp / 2 or current_hp <= 0:
+            return 0
+        return min(self.ripen_ability_defender(10), max_hp - current_hp)
+
     def life_orb_item(self):
         pass
     def choice_band_item(self):
