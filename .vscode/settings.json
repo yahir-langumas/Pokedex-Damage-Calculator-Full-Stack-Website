@@ -1,3 +1,6 @@
 {
-    "djlint.showInstallError": false
+    "djlint.showInstallError": false,
+    "terminal.integrated.env.windows": {
+        "DJANGO_DEBUG": "True"
+    }
 }
