@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem;">
+  <h1>Moves</h1>
+  <table>
+    <tr><th>Name</th><th>Type</th><th>Category</th><th>Power</th><th>Accuracy</th><th>PP</th></tr>
+    {% for move in moves_list %}
+    <tr>
+      <td>{{ move.name }}</td>
+      <td>{{ move.type }}</td>
+      <td>{{ move.damage_class }}</td>
+      <td>{{ move.power|default:"-" }}</td>
+      <td>{{ move.accuracy|default:"-" }}</td>
+      <td>{{ move.pp }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}
