@@ -439,6 +439,33 @@ EMBODY_ASPECT_STATS = {
     "teal-mask": "speed", "wellspring-mask": "special-defense", "hearthflame-mask": "attack", "cornerstone-mask": "defense",
 }
 
+# Each nature's raised and lowered stat. Neutral natures don't change any stats.
+NATURES = {
+    "hardy": (None, None), "lonely": ("attack", "defense"), "brave": ("attack", "speed"), "adamant": ("attack", "special-attack"), "naughty": ("attack", "special-defense"),
+    "bold": ("defense", "attack"), "docile": (None, None), "relaxed": ("defense", "speed"), "impish": ("defense", "special-attack"), "lax": ("defense", "special-defense"),
+    "timid": ("speed", "attack"), "hasty": ("speed", "defense"), "serious": (None, None), "jolly": ("speed", "special-attack"), "naive": ("speed", "special-defense"),
+    "modest": ("special-attack", "attack"), "mild": ("special-attack", "defense"), "quiet": ("special-attack", "speed"), "bashful": (None, None), "rash": ("special-attack", "special-defense"),
+    "calm": ("special-defense", "attack"), "gentle": ("special-defense", "defense"), "sassy": ("special-defense", "speed"), "careful": ("special-defense", "special-attack"), "quirky": (None, None),
+}
+
+# Healing Berries that also confuse the Pokémon if its nature lowers this stat (it dislikes the flavor).
+CONFUSION_BERRIES = {
+    "figy-berry": "attack", "wiki-berry": "special-attack", "mago-berry": "speed", "aguav-berry": "special-defense", "iapapa-berry": "defense",
+}
+
+# The move type each resist Berry weakens. Chilan Berry works on any Normal move, the rest only on super-effective hits.
+RESIST_BERRIES = {
+    "occa-berry": "fire", "passho-berry": "water", "wacan-berry": "electric", "rindo-berry": "grass", "yache-berry": "ice",
+    "chople-berry": "fighting", "kebia-berry": "poison", "shuca-berry": "ground", "coba-berry": "flying", "payapa-berry": "psychic",
+    "tanga-berry": "bug", "charti-berry": "rock", "kasib-berry": "ghost", "haban-berry": "dragon", "colbur-berry": "dark",
+    "babiri-berry": "steel", "chilan-berry": "normal",
+}
+
+# The stat each pinch Berry raises when the Pokémon's HP gets low.
+PINCH_BERRIES = {
+    "liechi-berry": "attack", "ganlon-berry": "defense", "salac-berry": "speed", "petaya-berry": "special-attack", "apicot-berry": "special-defense",
+}
+
 
 class DamageCalculator:
     # attacker_ability and defender_ability = the ability each Pokémon is using. If it's not given, it uses the Pokémon's first ability.
@@ -4336,7 +4363,7 @@ class DamageCalculator:
         if "ripen" not in self.defender_abilities:
             return berry_effect
         return berry_effect * 2
-        # Will add resist Berries like Occa Berry later with the items.
+        # Resist Berries check for Ripen in resist_berry_item.
 
     # Ice Face: The first physical hit Eiscue takes does no damage and breaks its ice face. Returns the move's power.
     # busted = True if the ice face is already broken.
@@ -5603,6 +5630,84 @@ class DamageCalculator:
         if self.held_berry_defender() != "oran-berry" or current_hp > max_hp / 2 or current_hp <= 0:
             return 0
         return min(self.ripen_ability_defender(10), max_hp - current_hp)
+
+    # Persim Berry: If the Pokémon is confused, it eats the Berry and snaps out of it. Returns True if it's still confused.
+    # confused = True if the Pokémon is confused.
+    def persim_berry_item_attacker(self, confused):
+        if self.held_berry_attacker() != "persim-berry" or not confused:
+            return confused
+        return False
+    def persim_berry_item_defender(self, confused):
+        if self.held_berry_defender() != "persim-berry" or not confused:
+            return confused
+        return False
+
+    # Lum Berry: If the Pokémon gets a status or becomes confused, it eats the Berry and is cured of both. Returns its status and whether it's still confused.
+    def lum_berry_item_attacker(self, confused=False):
+        if self.held_berry_attacker() != "lum-berry" or (not self.status_effects_attacker() and not confused):
+            return self.status_attacker, confused
+        return None, False
+    def lum_berry_item_defender(self, confused=False):
+        if self.held_berry_defender() != "lum-berry" or (not self.status_effects_defender() and not confused):
+            return self.status_defender, confused
+        return None, False
+
+    # Sitrus Berry: When the Pokémon's HP drops to 1/2 or less, it eats the Berry and heals 1/4 of its max HP. Returns how much HP it heals.
+    def sitrus_berry_item_attacker(self, current_hp, max_hp):
+        if self.held_berry_attacker() != "sitrus-berry" or current_hp > max_hp / 2 or current_hp <= 0:
+            return 0
+        return min(self.ripen_ability_attacker(max_hp // 4), max_hp - current_hp)
+    def sitrus_berry_item_defender(self, current_hp, max_hp):
+        if self.held_berry_defender() != "sitrus-berry" or current_hp > max_hp / 2 or current_hp <= 0:
+            return 0
+        return min(self.ripen_ability_defender(max_hp // 4), max_hp - current_hp)
+
+    # Figy, Wiki, Mago, Aguav and Iapapa Berry: When the Pokémon's HP drops to 1/4 or less, it eats the Berry and heals 1/3 of its max HP. If its nature lowers the Berry's stat, it also becomes confused. Returns how much HP it heals and whether it gets confused.
+    # nature = the Pokémon's nature.
+    def confusion_berry_item_attacker(self, current_hp, max_hp, nature=None):
+        berry = self.held_berry_attacker()
+        if berry not in CONFUSION_BERRIES or current_hp <= 0 or current_hp > max_hp * self.gluttony_ability_attacker(0.25):
+            return 0, False
+        heal = min(self.ripen_ability_attacker(max_hp // 3), max_hp - current_hp)
+        return heal, NATURES.get(nature, (None, None))[1] == CONFUSION_BERRIES[berry]
+    def confusion_berry_item_defender(self, current_hp, max_hp, nature=None):
+        berry = self.held_berry_defender()
+        if berry not in CONFUSION_BERRIES or current_hp <= 0 or current_hp > max_hp * self.gluttony_ability_defender(0.25):
+            return 0, False
+        heal = min(self.ripen_ability_defender(max_hp // 3), max_hp - current_hp)
+        return heal, NATURES.get(nature, (None, None))[1] == CONFUSION_BERRIES[berry]
+
+    # Resist Berries (Occa, Passho, Wacan, etc.): When the Pokémon is hit by a super-effective move of the Berry's type, it eats the Berry and takes half damage. Chilan Berry works on any Normal-type move. Returns the damage multiplier.
+    def resist_berry_item_attacker(self):
+        berry = self.held_berry_attacker()
+        if berry not in RESIST_BERRIES or self.status_move() or self.move_type != RESIST_BERRIES[berry]:
+            return 1
+        if berry != "chilan-berry" and self.type_effectiveness_attacker() <= 1:
+            return 1
+        if "ripen" in self.attacker_abilities:
+            return 0.25
+        return 0.5
+    def resist_berry_item_defender(self):
+        berry = self.held_berry_defender()
+        if berry not in RESIST_BERRIES or self.status_move() or self.move_type != RESIST_BERRIES[berry]:
+            return 1
+        if berry != "chilan-berry" and self.type_effectiveness_defender() <= 1:
+            return 1
+        if "ripen" in self.defender_abilities:
+            return 0.25
+        return 0.5
+
+    # Liechi, Ganlon, Salac, Petaya and Apicot Berry: When the Pokémon's HP drops to 1/4 or less, it eats the Berry and one of its stats goes up 1 stage. Returns the stat that goes up and the stage change.
+    def pinch_berry_item_attacker(self, current_hp, max_hp):
+        berry = self.held_berry_attacker()
+        if berry not in PINCH_BERRIES or current_hp <= 0 or current_hp > max_hp * self.gluttony_ability_attacker(0.25):
+            return None, 0
+        return PINCH_BERRIES[berry], self.ripen_ability_attacker(1)
+    def pinch_berry_item_defender(self, current_hp, max_hp):
+        berry = self.held_berry_defender()
+        if berry not in PINCH_BERRIES or current_hp <= 0 or current_hp > max_hp * self.gluttony_ability_defender(0.25):
+            return None, 0
+        return PINCH_BERRIES[berry], self.ripen_ability_defender(1)
 
     def life_orb_item(self):
         pass
