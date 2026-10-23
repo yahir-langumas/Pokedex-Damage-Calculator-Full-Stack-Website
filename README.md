@@ -12,9 +12,9 @@ This project pulls Pokémon species, moves, learnsets, and type-effectiveness da
 - **Expandable reference panels** — click any Pokémon card to reveal direct links to its Bulbapedia, Smogon (SV), and Limitless VGC pages.
 - **Home page** with an overview and entry points into the Pokédex and team builder.
 - **Moves page** — every move with its type, category, power, accuracy, and PP.
-- **Damage calculator engine** (in progress) — move-category checks (sound, slicing, biting, punching, pulse, wind, ball-and-bomb, powder/spore moves, and more), weather, terrain, status conditions, all 314 abilities, and held items (being added now), all modeling real in-game mechanics rather than approximations.
+- **Damage calculator engine** (in progress) — move-category checks (sound, slicing, biting, punching, pulse, wind, ball-and-bomb, powder/spore moves, and more), weather, terrain, status conditions, all 314 abilities, and 168 of 218 battle-relevant held items, all modeling real in-game mechanics rather than approximations.
 
-The team builder page is scaffolded but not functional yet. The damage calculator doesn't have a page yet; the final damage formula is the next step.
+The team builder page is scaffolded but not functional yet. The damage calculator doesn't have a page yet; the stat and damage formulas come next.
 
 ## Tech Stack
 
@@ -22,23 +22,6 @@ The team builder page is scaffolded but not functional yet. The damage calculato
 - **Database:** SQLite
 - **Data source:** [PokeAPI](https://pokeapi.co/) via the `requests` library
 - **Frontend:** Server-rendered HTML/CSS/vanilla JS — no frontend framework
-
-## Project Structure
-
-```
-pokedata/
-├── models.py                     # Species, Moves, Learnset, Type
-├── views.py / urls.py            # Page routing
-├── damage_calculator.py          # DamageCalculator class + move, ability, and item reference data
-├── tests.py                      # Tests for the damage calculator
-├── fixtures/pokedata.json        # Saved copy of all the PokeAPI data (loads in seconds)
-├── templates/                    # base.html, home.html, pokemon_table.html, moves.html, team_builder.html
-└── management/commands/
-    ├── import_species.py         # Species, stats, types, abilities
-    ├── import_moves.py           # Move data + metadata (power, drain, ailments, etc.)
-    ├── import_learnset.py        # Links each species to its learnable moves
-    └── import_types.py           # Type effectiveness chart
-```
 
 ## Getting Started
 
@@ -85,4 +68,4 @@ All Pokémon data is sourced from [PokeAPI](https://pokeapi.co/). This is a pers
 
 ## Status
 
-Actively in progress. The data pipeline, Pokédex, and moves page are functional. All abilities are in the damage calculator; held items are being added now, followed by the stat and damage formulas and a calculator page.
+Actively in progress. The data pipeline, Pokédex, and moves page are functional. All 314 abilities and 168 of 218 held items (77%) are in the damage calculator. Next up: the last held items, the stat formula (EVs, IVs, natures, and levels), the damage formula, and a calculator page.
