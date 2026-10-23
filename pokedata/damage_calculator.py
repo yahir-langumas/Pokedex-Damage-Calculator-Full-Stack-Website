@@ -466,6 +466,26 @@ PINCH_BERRIES = {
     "liechi-berry": "attack", "ganlon-berry": "defense", "salac-berry": "speed", "petaya-berry": "special-attack", "apicot-berry": "special-defense",
 }
 
+# The move type each type-boosting item powers up by 20%.
+TYPE_BOOST_ITEMS = {
+    "silver-powder": "bug", "metal-coat": "steel", "soft-sand": "ground", "hard-stone": "rock", "miracle-seed": "grass",
+    "black-glasses": "dark", "black-belt": "fighting", "magnet": "electric", "mystic-water": "water", "sharp-beak": "flying",
+    "poison-barb": "poison", "never-melt-ice": "ice", "spell-tag": "ghost", "twisted-spoon": "psychic", "charcoal": "fire",
+    "dragon-fang": "dragon", "silk-scarf": "normal", "sea-incense": "water",
+}
+
+# Choice items lock the Pokémon into the first move it uses.
+CHOICE_ITEMS = {"choice-band", "choice-scarf", "choice-specs"}
+
+# Two-turn moves that charge on the first turn. Power Herb skips the charging turn.
+CHARGE_MOVES = {
+    "bounce", "dig", "dive", "electro-shot", "fly", "freeze-shock", "geomancy", "ice-burn", "meteor-beam",
+    "phantom-force", "razor-wind", "shadow-force", "skull-bash", "sky-attack", "solar-beam", "solar-blade",
+}
+
+# Power items halve the Pokémon's Speed. They still work with Klutz.
+POWER_ITEMS = {"power-anklet", "power-band", "power-belt", "power-bracer", "power-lens", "power-weight"}
+
 
 class DamageCalculator:
     # attacker_ability and defender_ability = the ability each Pokémon is using. If it's not given, it uses the Pokémon's first ability.
@@ -544,8 +564,12 @@ class DamageCalculator:
     # A Pokémon is grounded unless it is a Flying type or has Levitate or Eelevate. Terrain only affects grounded Pokémon.
     # Will add Air Balloon, Magnet Rise, and Gravity later once items and field moves are in.
     def grounded_attacker(self):
+        if self.held_item_attacker() == "iron-ball":
+            return True
         return "flying" not in self.attacker.types and "levitate" not in self.attacker_abilities and "eelevate" not in self.attacker_abilities
     def grounded_defender(self):
+        if self.held_item_defender() == "iron-ball":
+            return True
         return "flying" not in self.defender.types and "levitate" not in self.defender_abilities and "eelevate" not in self.defender_abilities
 
     # Rain, sun, and their primal versions boost or weaken moves of certain types.
@@ -848,14 +872,14 @@ class DamageCalculator:
     # Levitate is an ability that gives a Pokémon full immunity to Ground-type moves, Spikes, Toxic Spikes, and the Arena Trap ability.
     # Levitate also means the Pokémon isn't grounded, so terrain doesn't affect it (handled in grounded_attacker / grounded_defender).
     def levitate_ability_attacker(self):
-        if "levitate" not in self.attacker_abilities:
+        if "levitate" not in self.attacker_abilities or self.held_item_attacker() == "iron-ball":
             return self.move_power
         if self.move_type == "ground" and not self.status_move():
             return 0
         else:
             return self.move_power
     def levitate_ability_defender(self):
-        if "levitate" not in self.defender_abilities:
+        if "levitate" not in self.defender_abilities or self.held_item_defender() == "iron-ball":
             return self.move_power
         if self.move_type == "ground" and not self.status_move():
             return 0
@@ -1067,14 +1091,14 @@ class DamageCalculator:
         accuracy = self.move_data.accuracy
         if accuracy is None:
             return None
-        if "sand-veil" not in self.attacker_abilities or self.current_weather() != "sandstorm":
+        if "sand-veil" not in self.attacker_abilities or self.current_weather() != "sandstorm" or self.ohko_move():
             return accuracy
         return accuracy * 0.8
     def sand_veil_ability_defender(self):
         accuracy = self.move_data.accuracy
         if accuracy is None:
             return None
-        if "sand-veil" not in self.defender_abilities or self.current_weather() != "sandstorm":
+        if "sand-veil" not in self.defender_abilities or self.current_weather() != "sandstorm" or self.ohko_move():
             return accuracy
         return accuracy * 0.8
 
@@ -1294,13 +1318,13 @@ class DamageCalculator:
             return False
         if "ghost" in self.defender.types or "shadow-tag" in self.defender_abilities:
             return False
-        return True
+        return self.shed_shell_item_defender(True)
     def shadow_tag_ability_defender(self, switched_in_this_turn=False):
         if "shadow-tag" not in self.defender_abilities or switched_in_this_turn:
             return False
         if "ghost" in self.attacker.types or "shadow-tag" in self.attacker_abilities:
             return False
-        return True
+        return self.shed_shell_item_attacker(True)
 
     # Rough Skin: When the Pokémon is hit by a contact move, the attacker takes 1/8 of its max HP as dmg.
     def rough_skin_ability_attacker(self):
@@ -1569,13 +1593,13 @@ class DamageCalculator:
             return False
         if "steel" not in self.defender.types or "ghost" in self.defender.types:
             return False
-        return True
+        return self.shed_shell_item_defender(True)
     def magnet_pull_ability_defender(self, switched_in_this_turn=False):
         if "magnet-pull" not in self.defender_abilities or switched_in_this_turn:
             return False
         if "steel" not in self.attacker.types or "ghost" in self.attacker.types:
             return False
-        return True
+        return self.shed_shell_item_attacker(True)
 
     # Soundproof: The Pokémon is immune to sound-based moves.
     def soundproof_ability_attacker(self):
@@ -1678,8 +1702,8 @@ class DamageCalculator:
     # Returns the move's accuracy when this Pokémon uses it. None means the move never misses.
     def keen_eye_ability_attacker(self, accuracy_stage=0, target_evasion_stage=0):
         accuracy = self.move_data.accuracy
-        if accuracy is None:
-            return None
+        if accuracy is None or self.ohko_move():
+            return accuracy
         if "keen-eye" in self.attacker_abilities:
             target_evasion_stage = 0
         stage = max(-6, min(6, accuracy_stage - target_evasion_stage))
@@ -1688,8 +1712,8 @@ class DamageCalculator:
         return accuracy * 3 / (3 - stage)
     def keen_eye_ability_defender(self, accuracy_stage=0, target_evasion_stage=0):
         accuracy = self.move_data.accuracy
-        if accuracy is None:
-            return None
+        if accuracy is None or self.ohko_move():
+            return accuracy
         if "keen-eye" in self.defender_abilities:
             target_evasion_stage = 0
         stage = max(-6, min(6, accuracy_stage - target_evasion_stage))
@@ -1762,14 +1786,14 @@ class DamageCalculator:
         accuracy = self.move_data.accuracy
         if accuracy is None:
             return None
-        if "hustle" not in self.attacker_abilities or self.move_data.damage_class != "physical":
+        if "hustle" not in self.attacker_abilities or self.move_data.damage_class != "physical" or self.ohko_move():
             return accuracy
         return accuracy * 0.8
     def hustle_accuracy_defender(self):
         accuracy = self.move_data.accuracy
         if accuracy is None:
             return None
-        if "hustle" not in self.defender_abilities or self.move_data.damage_class != "physical":
+        if "hustle" not in self.defender_abilities or self.move_data.damage_class != "physical" or self.ohko_move():
             return accuracy
         return accuracy * 0.8
 
@@ -1964,13 +1988,13 @@ class DamageCalculator:
             return False
         if not self.grounded_defender() or "ghost" in self.defender.types:
             return False
-        return True
+        return self.shed_shell_item_defender(True)
     def arena_trap_ability_defender(self, switched_in_this_turn=False):
         if "arena-trap" not in self.defender_abilities or switched_in_this_turn:
             return False
         if not self.grounded_attacker() or "ghost" in self.attacker.types:
             return False
-        return True
+        return self.shed_shell_item_attacker(True)
 
     # Vital Spirit: The Pokémon can't fall asleep.
     def vital_spirit_ability_attacker(self):
@@ -2016,14 +2040,14 @@ class DamageCalculator:
         accuracy = self.move_data.accuracy
         if accuracy is None:
             return None
-        if "tangled-feet" not in self.attacker_abilities or not confused:
+        if "tangled-feet" not in self.attacker_abilities or not confused or self.ohko_move():
             return accuracy
         return accuracy * 0.5
     def tangled_feet_ability_defender(self, confused):
         accuracy = self.move_data.accuracy
         if accuracy is None:
             return None
-        if "tangled-feet" not in self.defender_abilities or not confused:
+        if "tangled-feet" not in self.defender_abilities or not confused or self.ohko_move():
             return accuracy
         return accuracy * 0.5
 
@@ -2070,14 +2094,14 @@ class DamageCalculator:
         accuracy = self.move_data.accuracy
         if accuracy is None:
             return None
-        if "snow-cloak" not in self.attacker_abilities or self.current_weather() not in ("snow", "hail"):
+        if "snow-cloak" not in self.attacker_abilities or self.current_weather() not in ("snow", "hail") or self.ohko_move():
             return accuracy
         return accuracy * 0.8
     def snow_cloak_ability_defender(self):
         accuracy = self.move_data.accuracy
         if accuracy is None:
             return None
-        if "snow-cloak" not in self.defender_abilities or self.current_weather() not in ("snow", "hail"):
+        if "snow-cloak" not in self.defender_abilities or self.current_weather() not in ("snow", "hail") or self.ohko_move():
             return accuracy
         return accuracy * 0.8
 
@@ -3190,14 +3214,14 @@ class DamageCalculator:
         accuracy = self.move_data.accuracy
         if accuracy is None:
             return None
-        if "victory-star" not in self.attacker_abilities:
+        if "victory-star" not in self.attacker_abilities or self.ohko_move():
             return accuracy
         return accuracy * 1.1
     def victory_star_ability_defender(self):
         accuracy = self.move_data.accuracy
         if accuracy is None:
             return None
-        if "victory-star" not in self.defender_abilities:
+        if "victory-star" not in self.defender_abilities or self.ohko_move():
             return accuracy
         return accuracy * 1.1
 
@@ -4482,7 +4506,7 @@ class DamageCalculator:
         if "gorilla-tactics" not in self.defender_abilities:
             return self.defender.stats["attack"]
         return self.defender.stats["attack"] * 1.5
-        # Will add the move lock later with the Choice items.
+        # The move lock is in choice_lock_item.
 
     # Neutralizing Gas: While the Pokémon is out, the other Pokémon's abilities don't work. Returns the other Pokémon's abilities that still work.
     def neutralizing_gas_ability_attacker(self):
@@ -5393,13 +5417,13 @@ class DamageCalculator:
     # Eelevate: Same as Levitate. The Pokémon floats, so Ground-type moves don't affect it.
     # Eelevate also means the Pokémon isn't grounded (handled in grounded_attacker / grounded_defender).
     def eelevate_ability_attacker(self):
-        if "eelevate" not in self.attacker_abilities:
+        if "eelevate" not in self.attacker_abilities or self.held_item_attacker() == "iron-ball":
             return self.move_power
         if self.move_type == "ground" and not self.status_move():
             return 0
         return self.move_power
     def eelevate_ability_defender(self):
-        if "eelevate" not in self.defender_abilities:
+        if "eelevate" not in self.defender_abilities or self.held_item_defender() == "iron-ball":
             return self.move_power
         if self.move_type == "ground" and not self.status_move():
             return 0
@@ -5709,7 +5733,681 @@ class DamageCalculator:
             return None, 0
         return PINCH_BERRIES[berry], self.ripen_ability_defender(1)
 
-    def life_orb_item(self):
-        pass
-    def choice_band_item(self):
-        pass
+    # Lansat Berry: When the Pokémon's HP drops to 1/4 or less, it eats the Berry and its critical hit ratio goes up 2 stages. Returns how many crit stages it adds.
+    def lansat_berry_item_attacker(self, current_hp, max_hp):
+        if self.held_berry_attacker() != "lansat-berry" or current_hp <= 0 or current_hp > max_hp * self.gluttony_ability_attacker(0.25):
+            return 0
+        return 2
+    def lansat_berry_item_defender(self, current_hp, max_hp):
+        if self.held_berry_defender() != "lansat-berry" or current_hp <= 0 or current_hp > max_hp * self.gluttony_ability_defender(0.25):
+            return 0
+        return 2
+
+    # Starf Berry: When the Pokémon's HP drops to 1/4 or less, it eats the Berry and a random stat goes up 2 stages. Returns the stat that goes up and the stage change.
+    # stat_stages = the Pokémon's current stat stages. A stat already at +6 can't be picked.
+    def starf_berry_item_attacker(self, current_hp, max_hp, stat_stages=None):
+        if self.held_berry_attacker() != "starf-berry" or current_hp <= 0 or current_hp > max_hp * self.gluttony_ability_attacker(0.25):
+            return None, 0
+        stat_stages = stat_stages or {}
+        stats = [stat for stat in ("attack", "defense", "special-attack", "special-defense", "speed") if stat_stages.get(stat, 0) < 6]
+        if not stats:
+            return None, 0
+        return random.choice(stats), self.ripen_ability_attacker(2)
+    def starf_berry_item_defender(self, current_hp, max_hp, stat_stages=None):
+        if self.held_berry_defender() != "starf-berry" or current_hp <= 0 or current_hp > max_hp * self.gluttony_ability_defender(0.25):
+            return None, 0
+        stat_stages = stat_stages or {}
+        stats = [stat for stat in ("attack", "defense", "special-attack", "special-defense", "speed") if stat_stages.get(stat, 0) < 6]
+        if not stats:
+            return None, 0
+        return random.choice(stats), self.ripen_ability_defender(2)
+
+    # Enigma Berry: When the Pokémon is hit by a super-effective move, it eats the Berry and heals 1/4 of its max HP. Returns how much HP it heals.
+    # current_hp = its HP after the hit.
+    def enigma_berry_item_attacker(self, current_hp, max_hp):
+        if self.held_berry_attacker() != "enigma-berry" or self.status_move() or current_hp <= 0:
+            return 0
+        if self.type_effectiveness_attacker() <= 1:
+            return 0
+        return min(self.ripen_ability_attacker(max_hp // 4), max_hp - current_hp)
+    def enigma_berry_item_defender(self, current_hp, max_hp):
+        if self.held_berry_defender() != "enigma-berry" or self.status_move() or current_hp <= 0:
+            return 0
+        if self.type_effectiveness_defender() <= 1:
+            return 0
+        return min(self.ripen_ability_defender(max_hp // 4), max_hp - current_hp)
+
+    # Micle Berry: When the Pokémon's HP drops to 1/4 or less, it eats the Berry and its next move is 20% more accurate. One-hit KO moves don't get the boost. Returns the move's accuracy. None means the move never misses.
+    def micle_berry_item_attacker(self, current_hp, max_hp):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if self.held_berry_attacker() != "micle-berry" or self.ohko_move() or current_hp <= 0 or current_hp > max_hp * self.gluttony_ability_attacker(0.25):
+            return accuracy
+        return accuracy * 1.2
+    def micle_berry_item_defender(self, current_hp, max_hp):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if self.held_berry_defender() != "micle-berry" or self.ohko_move() or current_hp <= 0 or current_hp > max_hp * self.gluttony_ability_defender(0.25):
+            return accuracy
+        return accuracy * 1.2
+
+    # Custap Berry: When the Pokémon's HP is 1/4 or less, it eats the Berry and moves first among moves with the same priority. Returns the move's priority.
+    def custap_berry_item_attacker(self, current_hp, max_hp):
+        priority = self.move_data.priority
+        if self.held_berry_attacker() != "custap-berry" or priority > 0 or current_hp <= 0 or current_hp > max_hp * self.gluttony_ability_attacker(0.25):
+            return priority
+        if self.status_move() and "mycelium-might" in self.attacker_abilities:
+            return priority
+        return priority + 0.1
+    def custap_berry_item_defender(self, current_hp, max_hp):
+        priority = self.move_data.priority
+        if self.held_berry_defender() != "custap-berry" or priority > 0 or current_hp <= 0 or current_hp > max_hp * self.gluttony_ability_defender(0.25):
+            return priority
+        if self.status_move() and "mycelium-might" in self.defender_abilities:
+            return priority
+        return priority + 0.1
+
+    # Jaboca Berry: When the Pokémon is hit by a physical move, it eats the Berry and the attacker loses 1/8 of its max HP. Returns the HP the attacker loses as a fraction of its max HP.
+    def jaboca_berry_item_attacker(self):
+        if self.held_berry_attacker() != "jaboca-berry" or self.move_data.damage_class != "physical" or self.type_effectiveness_attacker() == 0:
+            return 0
+        if "magic-guard" in self.defender_abilities:
+            return 0
+        if "ripen" in self.attacker_abilities:
+            return 0.25
+        return 0.125
+    def jaboca_berry_item_defender(self):
+        if self.held_berry_defender() != "jaboca-berry" or self.move_data.damage_class != "physical" or self.type_effectiveness_defender() == 0:
+            return 0
+        if "magic-guard" in self.attacker_abilities:
+            return 0
+        if "ripen" in self.defender_abilities:
+            return 0.25
+        return 0.125
+
+    # Rowap Berry: When the Pokémon is hit by a special move, it eats the Berry and the attacker loses 1/8 of its max HP. Returns the HP the attacker loses as a fraction of its max HP.
+    def rowap_berry_item_attacker(self):
+        if self.held_berry_attacker() != "rowap-berry" or self.move_data.damage_class != "special" or self.type_effectiveness_attacker() == 0:
+            return 0
+        if "magic-guard" in self.defender_abilities:
+            return 0
+        if "ripen" in self.attacker_abilities:
+            return 0.25
+        return 0.125
+    def rowap_berry_item_defender(self):
+        if self.held_berry_defender() != "rowap-berry" or self.move_data.damage_class != "special" or self.type_effectiveness_defender() == 0:
+            return 0
+        if "magic-guard" in self.attacker_abilities:
+            return 0
+        if "ripen" in self.defender_abilities:
+            return 0.25
+        return 0.125
+
+    # Bright Powder: Moves aimed at the Pokémon are 10% less accurate. Returns the move's accuracy. None means the move never misses.
+    def bright_powder_item_attacker(self):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if self.held_item_attacker() != "bright-powder" or self.ohko_move():
+            return accuracy
+        return accuracy * 0.9
+    def bright_powder_item_defender(self):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if self.held_item_defender() != "bright-powder" or self.ohko_move():
+            return accuracy
+        return accuracy * 0.9
+
+    # White Herb: If any of the Pokémon's stats are lowered, it uses the herb and they go back to normal. Returns its stat stages after.
+    # stat_stages = the Pokémon's current stat stages.
+    def white_herb_item_attacker(self, stat_stages):
+        if self.held_item_attacker() != "white-herb" or not any(stage < 0 for stage in stat_stages.values()):
+            return stat_stages
+        return {stat: max(stage, 0) for stat, stage in stat_stages.items()}
+    def white_herb_item_defender(self, stat_stages):
+        if self.held_item_defender() != "white-herb" or not any(stage < 0 for stage in stat_stages.values()):
+            return stat_stages
+        return {stat: max(stage, 0) for stat, stage in stat_stages.items()}
+
+    # Macho Brace: Halves the Pokémon's Speed. It still works with Klutz.
+    def macho_brace_item_attacker(self):
+        if self.held_item_attacker() != "macho-brace":
+            return self.attacker.stats["speed"]
+        return self.attacker.stats["speed"] * 0.5
+    def macho_brace_item_defender(self):
+        if self.held_item_defender() != "macho-brace":
+            return self.defender.stats["speed"]
+        return self.defender.stats["speed"] * 0.5
+
+    # Quick Claw: The Pokémon has a 20% chance to move first among moves with the same priority. Returns the move's priority.
+    def quick_claw_item_attacker(self):
+        priority = self.move_data.priority
+        if self.held_item_attacker() != "quick-claw" or priority > 0:
+            return priority
+        if self.status_move() and "mycelium-might" in self.attacker_abilities:
+            return priority
+        if random.random() < 0.2:
+            return priority + 0.1
+        return priority
+    def quick_claw_item_defender(self):
+        priority = self.move_data.priority
+        if self.held_item_defender() != "quick-claw" or priority > 0:
+            return priority
+        if self.status_move() and "mycelium-might" in self.defender_abilities:
+            return priority
+        if random.random() < 0.2:
+            return priority + 0.1
+        return priority
+
+    # Mental Herb: If the Pokémon gets infatuated, taunted, tormented, encored, disabled or heal blocked, it uses the herb and is cured. Returns True if the effect gets cured.
+    # incoming_effect = the effect the Pokémon just got. Mental Herb cures the same effects Aroma Veil blocks.
+    def mental_herb_item_attacker(self, incoming_effect):
+        if self.held_item_attacker() != "mental-herb":
+            return False
+        return incoming_effect in VOLATILE_IMMUNITY_ABILITIES["aroma-veil"]
+    def mental_herb_item_defender(self, incoming_effect):
+        if self.held_item_defender() != "mental-herb":
+            return False
+        return incoming_effect in VOLATILE_IMMUNITY_ABILITIES["aroma-veil"]
+
+    # Choice Band: Boosts the Pokémon's Attack by 50%, but it can only use the first move it picks.
+    def choice_band_item_attacker(self):
+        if self.held_item_attacker() != "choice-band":
+            return self.attacker.stats["attack"]
+        return self.attacker.stats["attack"] * 1.5
+    def choice_band_item_defender(self):
+        if self.held_item_defender() != "choice-band":
+            return self.defender.stats["attack"]
+        return self.defender.stats["attack"] * 1.5
+
+    # Choice items and Gorilla Tactics lock the Pokémon into the first move it uses until it switches out. Returns True if it can use this move.
+    # locked_move = the move it's locked into, or None if it hasn't used a move yet.
+    def choice_lock_item_attacker(self, locked_move=None):
+        if self.held_item_attacker() not in CHOICE_ITEMS and "gorilla-tactics" not in self.attacker_abilities:
+            return True
+        return locked_move is None or locked_move == self.move_name or self.move_name == "struggle"
+    def choice_lock_item_defender(self, locked_move=None):
+        if self.held_item_defender() not in CHOICE_ITEMS and "gorilla-tactics" not in self.defender_abilities:
+            return True
+        return locked_move is None or locked_move == self.move_name or self.move_name == "struggle"
+
+    # King's Rock: The Pokémon's damaging moves get a 10% chance to make the target flinch. Moves that can already flinch keep their own chance. Returns the flinch chance as a decimal.
+    def kings_rock_item_attacker(self):
+        move_flinch_chance = 0
+        if self.move_data.meta is not None:
+            move_flinch_chance = (self.move_data.meta.get("flinch_chance") or 0) / 100
+        if self.held_item_attacker() != "kings-rock" or self.status_move() or move_flinch_chance > 0:
+            return move_flinch_chance
+        return 0.10
+    def kings_rock_item_defender(self):
+        move_flinch_chance = 0
+        if self.move_data.meta is not None:
+            move_flinch_chance = (self.move_data.meta.get("flinch_chance") or 0) / 100
+        if self.held_item_defender() != "kings-rock" or self.status_move() or move_flinch_chance > 0:
+            return move_flinch_chance
+        return 0.10
+
+    # Type-boosting items (Charcoal, Mystic Water, Silk Scarf, etc.): Boost the power of the Pokémon's moves of the item's type by 20%.
+    def type_boost_item_attacker(self):
+        item = self.held_item_attacker()
+        if item not in TYPE_BOOST_ITEMS or not self.move_power or self.move_type != TYPE_BOOST_ITEMS[item]:
+            return self.move_power
+        return self.move_power * 1.2
+    def type_boost_item_defender(self):
+        item = self.held_item_defender()
+        if item not in TYPE_BOOST_ITEMS or not self.move_power or self.move_type != TYPE_BOOST_ITEMS[item]:
+            return self.move_power
+        return self.move_power * 1.2
+
+    # Soul Dew: Boosts the power of Latias and Latios's Psychic and Dragon-type moves by 20%.
+    def soul_dew_item_attacker(self):
+        if self.held_item_attacker() != "soul-dew" or self.attacker.pokedex_id not in (380, 381) or not self.move_power:
+            return self.move_power
+        if self.move_type in ("psychic", "dragon"):
+            return self.move_power * 1.2
+        return self.move_power
+    def soul_dew_item_defender(self):
+        if self.held_item_defender() != "soul-dew" or self.defender.pokedex_id not in (380, 381) or not self.move_power:
+            return self.move_power
+        if self.move_type in ("psychic", "dragon"):
+            return self.move_power * 1.2
+        return self.move_power
+
+    # Deep Sea Tooth: Doubles Clamperl's Sp. Atk.
+    def deep_sea_tooth_item_attacker(self):
+        if self.held_item_attacker() != "deep-sea-tooth" or self.attacker.pokedex_id != 366:
+            return self.attacker.stats["special-attack"]
+        return self.attacker.stats["special-attack"] * 2
+    def deep_sea_tooth_item_defender(self):
+        if self.held_item_defender() != "deep-sea-tooth" or self.defender.pokedex_id != 366:
+            return self.defender.stats["special-attack"]
+        return self.defender.stats["special-attack"] * 2
+
+    # Deep Sea Scale: Doubles Clamperl's Sp. Def.
+    def deep_sea_scale_item_attacker(self):
+        if self.held_item_attacker() != "deep-sea-scale" or self.attacker.pokedex_id != 366:
+            return self.attacker.stats["special-defense"]
+        return self.attacker.stats["special-defense"] * 2
+    def deep_sea_scale_item_defender(self):
+        if self.held_item_defender() != "deep-sea-scale" or self.defender.pokedex_id != 366:
+            return self.defender.stats["special-defense"]
+        return self.defender.stats["special-defense"] * 2
+
+    # Focus Band: The Pokémon has a 10% chance to survive a hit that would knock it out, with 1 HP left. Returns the damage it actually takes.
+    # damage = the dmg from the hit. current_hp = its HP before the hit.
+    def focus_band_item_attacker(self, damage, current_hp):
+        if self.held_item_attacker() != "focus-band" or damage < current_hp:
+            return damage
+        if random.random() < 0.1:
+            return current_hp - 1
+        return damage
+    def focus_band_item_defender(self, damage, current_hp):
+        if self.held_item_defender() != "focus-band" or damage < current_hp:
+            return damage
+        if random.random() < 0.1:
+            return current_hp - 1
+        return damage
+
+    # Scope Lens: Raises the Pokémon's critical hit ratio by 1 stage. Returns how many crit stages it adds.
+    def scope_lens_item_attacker(self):
+        if self.held_item_attacker() != "scope-lens":
+            return 0
+        return 1
+    def scope_lens_item_defender(self):
+        if self.held_item_defender() != "scope-lens":
+            return 0
+        return 1
+
+    # Leftovers: Heals 1/16 of the Pokémon's max HP at the end of each turn.
+    def leftovers_item_attacker(self):
+        if self.held_item_attacker() != "leftovers":
+            return 0
+        return 0.0625
+    def leftovers_item_defender(self):
+        if self.held_item_defender() != "leftovers":
+            return 0
+        return 0.0625
+
+    # Light Ball: Doubles Pikachu's Attack and Sp. Atk. Returns its Attack and Sp. Atk.
+    def light_ball_item_attacker(self):
+        attack = self.attacker.stats["attack"]
+        special_attack = self.attacker.stats["special-attack"]
+        if self.held_item_attacker() != "light-ball" or self.attacker.pokedex_id != 25:
+            return attack, special_attack
+        return attack * 2, special_attack * 2
+    def light_ball_item_defender(self):
+        attack = self.defender.stats["attack"]
+        special_attack = self.defender.stats["special-attack"]
+        if self.held_item_defender() != "light-ball" or self.defender.pokedex_id != 25:
+            return attack, special_attack
+        return attack * 2, special_attack * 2
+
+    # Shell Bell: The Pokémon heals 1/8 of the damage it deals. Sheer Force stops it from working. Returns how much HP it heals.
+    # damage_dealt = the dmg the move did.
+    def shell_bell_item_attacker(self, damage_dealt):
+        if self.held_item_attacker() != "shell-bell" or damage_dealt <= 0 or self.sheer_force_effects_attacker():
+            return 0
+        return damage_dealt // 8
+    def shell_bell_item_defender(self, damage_dealt):
+        if self.held_item_defender() != "shell-bell" or damage_dealt <= 0 or self.sheer_force_effects_defender():
+            return 0
+        return damage_dealt // 8
+
+    # Lax Incense: Moves aimed at the Pokémon are 10% less accurate. Returns the move's accuracy. None means the move never misses.
+    def lax_incense_item_attacker(self):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if self.held_item_attacker() != "lax-incense" or self.ohko_move():
+            return accuracy
+        return accuracy * 0.9
+    def lax_incense_item_defender(self):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if self.held_item_defender() != "lax-incense" or self.ohko_move():
+            return accuracy
+        return accuracy * 0.9
+
+    # Lucky Punch: Raises Chansey's critical hit ratio by 2 stages. Returns how many crit stages it adds.
+    def lucky_punch_item_attacker(self):
+        if self.held_item_attacker() != "lucky-punch" or self.attacker.pokedex_id != 113:
+            return 0
+        return 2
+    def lucky_punch_item_defender(self):
+        if self.held_item_defender() != "lucky-punch" or self.defender.pokedex_id != 113:
+            return 0
+        return 2
+
+    # Metal Powder: Doubles Ditto's Defense as long as it hasn't transformed.
+    def metal_powder_item_attacker(self, transformed=False):
+        if self.held_item_attacker() != "metal-powder" or self.attacker.pokedex_id != 132 or transformed:
+            return self.attacker.stats["defense"]
+        return self.attacker.stats["defense"] * 2
+    def metal_powder_item_defender(self, transformed=False):
+        if self.held_item_defender() != "metal-powder" or self.defender.pokedex_id != 132 or transformed:
+            return self.defender.stats["defense"]
+        return self.defender.stats["defense"] * 2
+
+    # Thick Club: Doubles Cubone and Marowak's Attack.
+    def thick_club_item_attacker(self):
+        if self.held_item_attacker() != "thick-club" or self.attacker.pokedex_id not in (104, 105):
+            return self.attacker.stats["attack"]
+        return self.attacker.stats["attack"] * 2
+    def thick_club_item_defender(self):
+        if self.held_item_defender() != "thick-club" or self.defender.pokedex_id not in (104, 105):
+            return self.defender.stats["attack"]
+        return self.defender.stats["attack"] * 2
+
+    # Leek: Raises Farfetch'd and Sirfetch'd's critical hit ratio by 2 stages. Returns how many crit stages it adds.
+    def leek_item_attacker(self):
+        if self.held_item_attacker() != "leek" or self.attacker.pokedex_id not in (83, 865):
+            return 0
+        return 2
+    def leek_item_defender(self):
+        if self.held_item_defender() != "leek" or self.defender.pokedex_id not in (83, 865):
+            return 0
+        return 2
+
+    # Wide Lens: The Pokémon's moves are 10% more accurate. Returns the move's accuracy. None means the move never misses.
+    def wide_lens_item_attacker(self):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if self.held_item_attacker() != "wide-lens" or self.ohko_move():
+            return accuracy
+        return accuracy * 1.1
+    def wide_lens_item_defender(self):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if self.held_item_defender() != "wide-lens" or self.ohko_move():
+            return accuracy
+        return accuracy * 1.1
+
+    # Muscle Band: Boosts the power of the Pokémon's physical moves by 10%.
+    def muscle_band_item_attacker(self):
+        if self.held_item_attacker() != "muscle-band" or not self.move_power or self.move_data.damage_class != "physical":
+            return self.move_power
+        return self.move_power * 1.1
+    def muscle_band_item_defender(self):
+        if self.held_item_defender() != "muscle-band" or not self.move_power or self.move_data.damage_class != "physical":
+            return self.move_power
+        return self.move_power * 1.1
+
+    # Wise Glasses: Boosts the power of the Pokémon's special moves by 10%.
+    def wise_glasses_item_attacker(self):
+        if self.held_item_attacker() != "wise-glasses" or not self.move_power or self.move_data.damage_class != "special":
+            return self.move_power
+        return self.move_power * 1.1
+    def wise_glasses_item_defender(self):
+        if self.held_item_defender() != "wise-glasses" or not self.move_power or self.move_data.damage_class != "special":
+            return self.move_power
+        return self.move_power * 1.1
+
+    # Expert Belt: Boosts the dmg of the Pokémon's super-effective moves by 20%. Returns the dmg multiplier.
+    def expert_belt_item_attacker(self):
+        if self.held_item_attacker() != "expert-belt" or self.status_move() or self.type_effectiveness_defender() <= 1:
+            return 1
+        return 1.2
+    def expert_belt_item_defender(self):
+        if self.held_item_defender() != "expert-belt" or self.status_move() or self.type_effectiveness_attacker() <= 1:
+            return 1
+        return 1.2
+
+    # Life Orb: Boosts the dmg of the Pokémon's moves by 30%, but it loses 1/10 of its max HP each time it attacks. Returns the dmg multiplier and the HP it loses as a fraction of its max HP.
+    # Magic Guard and Sheer Force stop the HP loss.
+    def life_orb_item_attacker(self):
+        if self.held_item_attacker() != "life-orb" or self.status_move():
+            return 1, 0
+        if "magic-guard" in self.attacker_abilities or self.sheer_force_effects_attacker():
+            return 1.3, 0
+        return 1.3, 0.1
+    def life_orb_item_defender(self):
+        if self.held_item_defender() != "life-orb" or self.status_move():
+            return 1, 0
+        if "magic-guard" in self.defender_abilities or self.sheer_force_effects_defender():
+            return 1.3, 0
+        return 1.3, 0.1
+
+    # Power Herb: The Pokémon skips the charging turn of a two-turn move (Solar Beam, Fly, etc.) and uses up the herb. Returns True if it uses the herb.
+    # Solar Beam and Solar Blade don't charge in sun, and Electro Shot doesn't charge in rain, so the herb isn't used.
+    def power_herb_item_attacker(self):
+        if self.held_item_attacker() != "power-herb" or self.move_name not in CHARGE_MOVES:
+            return False
+        if self.move_name in ("solar-beam", "solar-blade") and self.current_weather() in ("sun", "extreme-sun"):
+            return False
+        if self.move_name == "electro-shot" and self.current_weather() in ("rain", "heavy-rain"):
+            return False
+        return True
+    def power_herb_item_defender(self):
+        if self.held_item_defender() != "power-herb" or self.move_name not in CHARGE_MOVES:
+            return False
+        if self.move_name in ("solar-beam", "solar-blade") and self.current_weather() in ("sun", "extreme-sun"):
+            return False
+        if self.move_name == "electro-shot" and self.current_weather() in ("rain", "heavy-rain"):
+            return False
+        return True
+
+    # Toxic Orb: At the end of the turn, the Pokémon gets badly poisoned. Returns its status.
+    def toxic_orb_item_attacker(self):
+        if self.held_item_attacker() != "toxic-orb" or self.status_attacker or self.status_immune_attacker("badly-poison"):
+            return self.status_attacker
+        return "badly-poison"
+    def toxic_orb_item_defender(self):
+        if self.held_item_defender() != "toxic-orb" or self.status_defender or self.status_immune_defender("badly-poison"):
+            return self.status_defender
+        return "badly-poison"
+
+    # Flame Orb: At the end of the turn, the Pokémon gets burned. Returns its status.
+    def flame_orb_item_attacker(self):
+        if self.held_item_attacker() != "flame-orb" or self.status_attacker or self.status_immune_attacker("burn"):
+            return self.status_attacker
+        return "burn"
+    def flame_orb_item_defender(self):
+        if self.held_item_defender() != "flame-orb" or self.status_defender or self.status_immune_defender("burn"):
+            return self.status_defender
+        return "burn"
+
+    # Quick Powder: Doubles Ditto's Speed as long as it hasn't transformed.
+    def quick_powder_item_attacker(self, transformed=False):
+        if self.held_item_attacker() != "quick-powder" or self.attacker.pokedex_id != 132 or transformed:
+            return self.attacker.stats["speed"]
+        return self.attacker.stats["speed"] * 2
+    def quick_powder_item_defender(self, transformed=False):
+        if self.held_item_defender() != "quick-powder" or self.defender.pokedex_id != 132 or transformed:
+            return self.defender.stats["speed"]
+        return self.defender.stats["speed"] * 2
+
+    # Focus Sash: If the Pokémon is at full HP, it survives a hit that would knock it out with 1 HP left and the sash is used up. Returns the dmg it actually takes.
+    # damage = the dmg from the hit. current_hp = its HP before the hit.
+    def focus_sash_item_attacker(self, damage, current_hp, max_hp):
+        if self.held_item_attacker() != "focus-sash" or current_hp != max_hp or damage < current_hp:
+            return damage
+        return current_hp - 1
+    def focus_sash_item_defender(self, damage, current_hp, max_hp):
+        if self.held_item_defender() != "focus-sash" or current_hp != max_hp or damage < current_hp:
+            return damage
+        return current_hp - 1
+
+    # Zoom Lens: If the Pokémon moves after the target, its move is 20% more accurate. Returns the move's accuracy. None means the move never misses.
+    def zoom_lens_item_attacker(self, moves_last):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if self.held_item_attacker() != "zoom-lens" or not moves_last or self.ohko_move():
+            return accuracy
+        return accuracy * 1.2
+    def zoom_lens_item_defender(self, moves_last):
+        accuracy = self.move_data.accuracy
+        if accuracy is None:
+            return None
+        if self.held_item_defender() != "zoom-lens" or not moves_last or self.ohko_move():
+            return accuracy
+        return accuracy * 1.2
+
+    # Metronome: Each time the Pokémon uses the same move in a row, it does 20% more dmg, up to double. Returns the dmg multiplier.
+    # consecutive_uses = how many times in a row it already used this move.
+    def metronome_item_attacker(self, consecutive_uses):
+        if self.held_item_attacker() != "metronome" or self.status_move():
+            return 1
+        return (1, 1.2, 1.4, 1.6, 1.8, 2)[min(max(consecutive_uses, 0), 5)]
+    def metronome_item_defender(self, consecutive_uses):
+        if self.held_item_defender() != "metronome" or self.status_move():
+            return 1
+        return (1, 1.2, 1.4, 1.6, 1.8, 2)[min(max(consecutive_uses, 0), 5)]
+
+    # Iron Ball: Halves the Pokémon's Speed and grounds it (handled in grounded_attacker / grounded_defender).
+    def iron_ball_item_attacker(self):
+        if self.held_item_attacker() != "iron-ball":
+            return self.attacker.stats["speed"]
+        return self.attacker.stats["speed"] * 0.5
+    def iron_ball_item_defender(self):
+        if self.held_item_defender() != "iron-ball":
+            return self.defender.stats["speed"]
+        return self.defender.stats["speed"] * 0.5
+
+    # Iron Ball also lets Ground-type moves hit a Flying-type holder, and they always do neutral dmg to it. Returns the type effectiveness.
+    def iron_ball_ground_item_attacker(self):
+        if self.held_item_attacker() != "iron-ball" or self.move_type != "ground" or "flying" not in self.attacker.types:
+            return self.type_effectiveness_attacker()
+        return 1
+    def iron_ball_ground_item_defender(self):
+        if self.held_item_defender() != "iron-ball" or self.move_type != "ground" or "flying" not in self.defender.types:
+            return self.type_effectiveness_defender()
+        return 1
+
+    # Lagging Tail: The Pokémon moves last among moves with the same priority. Returns the move's priority.
+    def lagging_tail_item_attacker(self):
+        priority = self.move_data.priority
+        if self.held_item_attacker() != "lagging-tail":
+            return priority
+        return priority - 0.1
+    def lagging_tail_item_defender(self):
+        priority = self.move_data.priority
+        if self.held_item_defender() != "lagging-tail":
+            return priority
+        return priority - 0.1
+
+    # Destiny Knot: If the Pokémon gets infatuated, the Pokémon that infatuated it gets infatuated too. Returns True if it does.
+    # incoming_effect = the effect the Pokémon just got.
+    def destiny_knot_item_attacker(self, incoming_effect):
+        if self.held_item_attacker() != "destiny-knot" or incoming_effect != "infatuation":
+            return False
+        for ability in self.defender_abilities:
+            if "infatuation" in VOLATILE_IMMUNITY_ABILITIES.get(ability, ()):
+                return False
+        return True
+    def destiny_knot_item_defender(self, incoming_effect):
+        if self.held_item_defender() != "destiny-knot" or incoming_effect != "infatuation":
+            return False
+        for ability in self.attacker_abilities:
+            if "infatuation" in VOLATILE_IMMUNITY_ABILITIES.get(ability, ()):
+                return False
+        return True
+
+    # Black Sludge: At the end of each turn, Poison-type Pokémon heal 1/16 of their max HP. Other Pokémon lose 1/8 instead. Returns the HP change as a fraction of its max HP.
+    def black_sludge_item_attacker(self):
+        if self.held_item_attacker() != "black-sludge":
+            return 0
+        if "poison" in self.attacker.types:
+            return 0.0625
+        if "magic-guard" in self.attacker_abilities:
+            return 0
+        return -0.125
+    def black_sludge_item_defender(self):
+        if self.held_item_defender() != "black-sludge":
+            return 0
+        if "poison" in self.defender.types:
+            return 0.0625
+        if "magic-guard" in self.defender_abilities:
+            return 0
+        return -0.125
+
+    # Choice Scarf: Boosts the Pokémon's Speed by 50%, but it can only use the first move it picks.
+    def choice_scarf_item_attacker(self):
+        if self.held_item_attacker() != "choice-scarf":
+            return self.attacker.stats["speed"]
+        return self.attacker.stats["speed"] * 1.5
+    def choice_scarf_item_defender(self):
+        if self.held_item_defender() != "choice-scarf":
+            return self.defender.stats["speed"]
+        return self.defender.stats["speed"] * 1.5
+
+    # Sticky Barb: The Pokémon loses 1/8 of its max HP at the end of each turn. Returns the HP change as a fraction of its max HP.
+    def sticky_barb_item_attacker(self):
+        if self.held_item_attacker() != "sticky-barb" or "magic-guard" in self.attacker_abilities:
+            return 0
+        return -0.125
+    def sticky_barb_item_defender(self):
+        if self.held_item_defender() != "sticky-barb" or "magic-guard" in self.defender_abilities:
+            return 0
+        return -0.125
+
+    # Sticky Barb also moves to the Pokémon that hits the holder with a contact move if that Pokémon isn't holding an item. Returns True if it moves.
+    def sticky_barb_transfer_item_attacker(self):
+        return self.held_item_attacker() == "sticky-barb" and self.contact_move() and self.defender_item is None
+    def sticky_barb_transfer_item_defender(self):
+        return self.held_item_defender() == "sticky-barb" and self.contact_move() and self.attacker_item is None
+
+    # Power items (Power Bracer, Power Belt, etc.): Halve the Pokémon's Speed. They still work with Klutz.
+    def power_item_attacker(self):
+        if self.held_item_attacker() not in POWER_ITEMS:
+            return self.attacker.stats["speed"]
+        return self.attacker.stats["speed"] * 0.5
+    def power_item_defender(self):
+        if self.held_item_defender() not in POWER_ITEMS:
+            return self.defender.stats["speed"]
+        return self.defender.stats["speed"] * 0.5
+
+    # Shed Shell: The Pokémon can always switch out, even if an ability like Shadow Tag is trapping it. Returns True if it's still trapped.
+    # trapped = whether it would be trapped without Shed Shell.
+    def shed_shell_item_attacker(self, trapped):
+        if self.held_item_attacker() != "shed-shell":
+            return trapped
+        return False
+    def shed_shell_item_defender(self, trapped):
+        if self.held_item_defender() != "shed-shell":
+            return trapped
+        return False
+
+    # Big Root: The Pokémon heals 30% more HP from draining moves. Returns the move's drain.
+    def big_root_item_attacker(self):
+        if self.move_data.meta is None:
+            return 0
+        drain = self.move_data.meta.get("drain", 0)
+        if self.held_item_attacker() != "big-root" or drain <= 0:
+            return drain
+        return drain * 1.3
+    def big_root_item_defender(self):
+        if self.move_data.meta is None:
+            return 0
+        drain = self.move_data.meta.get("drain", 0)
+        if self.held_item_defender() != "big-root" or drain <= 0:
+            return drain
+        return drain * 1.3
+
+    # Choice Specs: Boosts the Pokémon's Sp. Atk by 50%, but it can only use the first move it picks.
+    def choice_specs_item_attacker(self):
+        if self.held_item_attacker() != "choice-specs":
+            return self.attacker.stats["special-attack"]
+        return self.attacker.stats["special-attack"] * 1.5
+    def choice_specs_item_defender(self):
+        if self.held_item_defender() != "choice-specs":
+            return self.defender.stats["special-attack"]
+        return self.defender.stats["special-attack"] * 1.5
+
+    # Plates (Flame Plate, Splash Plate, etc.): Boost the power of the Pokémon's moves of the Plate's type by 20%.
+    def plate_item_attacker(self):
+        item = self.held_item_attacker()
+        if item not in PLATE_TYPES or not self.move_power or self.move_type != PLATE_TYPES[item]:
+            return self.move_power
+        return self.move_power * 1.2
+    def plate_item_defender(self):
+        item = self.held_item_defender()
+        if item not in PLATE_TYPES or not self.move_power or self.move_type != PLATE_TYPES[item]:
+            return self.move_power
+        return self.move_power * 1.2
