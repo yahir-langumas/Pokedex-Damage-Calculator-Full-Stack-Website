@@ -379,6 +379,8 @@ BATTLE_FORMS = {
     "eiscue-noice": {"types": ["ice"], "stats": {"hp": 75, "attack": 80, "defense": 70, "special-attack": 65, "special-defense": 50, "speed": 130}},
     "palafin-hero": {"types": ["water"], "stats": {"hp": 100, "attack": 160, "defense": 97, "special-attack": 106, "special-defense": 87, "speed": 100}},
     "terapagos-terastal": {"types": ["normal"], "stats": {"hp": 95, "attack": 95, "defense": 110, "special-attack": 105, "special-defense": 110, "speed": 85}},
+    "groudon-primal": {"types": ["ground", "fire"], "stats": {"hp": 100, "attack": 180, "defense": 160, "special-attack": 150, "special-defense": 90, "speed": 90}},
+    "kyogre-primal": {"types": ["water"], "stats": {"hp": 100, "attack": 150, "defense": 90, "special-attack": 180, "special-defense": 160, "speed": 90}},
 }
 
 # Moves Parental Bond doesn't make hit twice (charge moves, future moves and moves that only work once).
@@ -471,7 +473,8 @@ TYPE_BOOST_ITEMS = {
     "silver-powder": "bug", "metal-coat": "steel", "soft-sand": "ground", "hard-stone": "rock", "miracle-seed": "grass",
     "black-glasses": "dark", "black-belt": "fighting", "magnet": "electric", "mystic-water": "water", "sharp-beak": "flying",
     "poison-barb": "poison", "never-melt-ice": "ice", "spell-tag": "ghost", "twisted-spoon": "psychic", "charcoal": "fire",
-    "dragon-fang": "dragon", "silk-scarf": "normal", "sea-incense": "water",
+    "dragon-fang": "dragon", "silk-scarf": "normal", "sea-incense": "water", "odd-incense": "psychic", "rock-incense": "rock",
+    "wave-incense": "water", "rose-incense": "grass",
 }
 
 # Choice items lock the Pokémon into the first move it uses.
@@ -485,6 +488,65 @@ CHARGE_MOVES = {
 
 # Power items halve the Pokémon's Speed. They still work with Klutz.
 POWER_ITEMS = {"power-anklet", "power-band", "power-belt", "power-bracer", "power-lens", "power-weight"}
+
+# The move type each Gem powers up by 30%. The Gem is used up after one move.
+GEM_TYPES = {
+    "fire-gem": "fire", "water-gem": "water", "electric-gem": "electric", "grass-gem": "grass", "ice-gem": "ice",
+    "fighting-gem": "fighting", "poison-gem": "poison", "ground-gem": "ground", "flying-gem": "flying",
+    "psychic-gem": "psychic", "bug-gem": "bug", "rock-gem": "rock", "ghost-gem": "ghost", "dragon-gem": "dragon",
+    "dark-gem": "dark", "steel-gem": "steel", "normal-gem": "normal",
+}
+
+# Pokémon that can still evolve. Eviolite only works on these.
+NOT_FULLY_EVOLVED = {
+    "bulbasaur", "ivysaur", "charmander", "charmeleon", "squirtle", "wartortle", "caterpie", "metapod", "weedle",
+    "kakuna", "pidgey", "pidgeotto", "rattata", "spearow", "ekans", "pikachu", "sandshrew", "nidoran-f", "nidorina",
+    "nidoran-m", "nidorino", "clefairy", "vulpix", "jigglypuff", "zubat", "golbat", "oddish", "gloom", "paras",
+    "venonat", "diglett", "meowth", "psyduck", "mankey", "primeape", "growlithe", "poliwag", "poliwhirl", "abra",
+    "kadabra", "machop", "machoke", "bellsprout", "weepinbell", "tentacool", "geodude", "graveler", "ponyta",
+    "slowpoke", "magnemite", "magneton", "doduo", "seel", "grimer", "shellder", "gastly", "haunter", "onix",
+    "drowzee", "krabby", "voltorb", "exeggcute", "cubone", "lickitung", "koffing", "rhyhorn", "rhydon", "chansey",
+    "tangela", "horsea", "seadra", "goldeen", "staryu", "scyther", "electabuzz", "magmar", "magikarp", "eevee",
+    "porygon", "omanyte", "kabuto", "dratini", "dragonair", "chikorita", "bayleef", "cyndaquil", "quilava",
+    "totodile", "croconaw", "sentret", "hoothoot", "ledyba", "spinarak", "chinchou", "pichu", "cleffa", "igglybuff",
+    "togepi", "togetic", "natu", "mareep", "flaaffy", "marill", "hoppip", "skiploom", "aipom", "sunkern", "yanma",
+    "wooper", "murkrow", "misdreavus", "girafarig", "pineco", "dunsparce", "gligar", "snubbull", "sneasel",
+    "teddiursa", "ursaring", "slugma", "swinub", "piloswine", "remoraid", "houndour", "phanpy", "porygon2",
+    "stantler", "tyrogue", "smoochum", "elekid", "magby", "larvitar", "pupitar", "treecko", "grovyle", "torchic",
+    "combusken", "mudkip", "marshtomp", "poochyena", "zigzagoon", "wurmple", "silcoon", "cascoon", "lotad",
+    "lombre", "seedot", "nuzleaf", "taillow", "wingull", "ralts", "kirlia", "surskit", "shroomish", "slakoth",
+    "vigoroth", "nincada", "whismur", "loudred", "makuhita", "azurill", "nosepass", "skitty", "aron", "lairon",
+    "meditite", "electrike", "roselia", "gulpin", "carvanha", "wailmer", "numel", "spoink", "trapinch", "vibrava",
+    "cacnea", "swablu", "barboach", "corphish", "baltoy", "lileep", "anorith", "feebas", "shuppet", "duskull",
+    "dusclops", "wynaut", "snorunt", "spheal", "sealeo", "clamperl", "bagon", "shelgon", "beldum", "metang",
+    "turtwig", "grotle", "chimchar", "monferno", "piplup", "prinplup", "starly", "staravia", "bidoof", "kricketot",
+    "shinx", "luxio", "budew", "cranidos", "shieldon", "burmy", "combee", "buizel", "cherubi", "shellos",
+    "drifloon", "buneary", "glameow", "chingling", "stunky", "bronzor", "bonsly", "mime-jr", "happiny", "gible",
+    "gabite", "munchlax", "riolu", "hippopotas", "skorupi", "croagunk", "finneon", "mantyke", "snover", "snivy",
+    "servine", "tepig", "pignite", "oshawott", "dewott", "patrat", "lillipup", "herdier", "purrloin", "pansage",
+    "pansear", "panpour", "munna", "pidove", "tranquill", "blitzle", "roggenrola", "boldore", "woobat", "drilbur",
+    "timburr", "gurdurr", "tympole", "palpitoad", "sewaddle", "swadloon", "venipede", "whirlipede", "cottonee",
+    "petilil", "sandile", "krokorok", "darumaka", "dwebble", "scraggy", "yamask", "tirtouga", "archen", "trubbish",
+    "zorua", "minccino", "gothita", "gothorita", "solosis", "duosion", "ducklett", "vanillite", "vanillish",
+    "deerling", "karrablast", "foongus", "frillish-male", "joltik", "ferroseed", "klink", "klang", "tynamo",
+    "eelektrik", "elgyem", "litwick", "lampent", "axew", "fraxure", "cubchoo", "shelmet", "mienfoo", "golett",
+    "pawniard", "bisharp", "rufflet", "vullaby", "deino", "zweilous", "larvesta", "chespin", "quilladin",
+    "fennekin", "braixen", "froakie", "frogadier", "bunnelby", "fletchling", "fletchinder", "scatterbug", "spewpa",
+    "litleo", "flabebe", "floette", "skiddo", "pancham", "espurr", "honedge", "doublade", "spritzee", "swirlix",
+    "inkay", "binacle", "skrelp", "clauncher", "helioptile", "tyrunt", "amaura", "goomy", "sliggoo", "phantump",
+    "pumpkaboo-average", "bergmite", "noibat", "rowlet", "dartrix", "litten", "torracat", "popplio", "brionne",
+    "pikipek", "trumbeak", "yungoos", "grubbin", "charjabug", "crabrawler", "cutiefly", "rockruff", "mareanie",
+    "mudbray", "dewpider", "fomantis", "morelull", "salandit", "stufful", "bounsweet", "steenee", "wimpod",
+    "sandygast", "type-null", "jangmo-o", "hakamo-o", "cosmog", "cosmoem", "poipole", "grookey", "thwackey",
+    "scorbunny", "raboot", "sobble", "drizzile", "skwovet", "rookidee", "corvisquire", "blipbug", "dottler",
+    "nickit", "gossifleur", "wooloo", "chewtle", "yamper", "rolycoly", "carkol", "applin", "silicobra", "arrokuda",
+    "toxel", "sizzlipede", "clobbopus", "sinistea", "hatenna", "hattrem", "impidimp", "morgrem", "milcery", "snom",
+    "cufant", "duraludon", "dreepy", "drakloak", "kubfu", "sprigatito", "floragato", "fuecoco", "crocalor",
+    "quaxly", "quaxwell", "lechonk", "tarountula", "nymble", "pawmi", "pawmo", "tandemaus", "fidough", "smoliv",
+    "dolliv", "nacli", "naclstack", "charcadet", "tadbulb", "wattrel", "maschiff", "shroodle", "bramblin",
+    "toedscool", "capsakid", "rellor", "flittle", "tinkatink", "tinkatuff", "wiglett", "finizen", "varoom",
+    "glimmet", "greavard", "cetoddle", "frigibax", "arctibax", "gimmighoul", "dipplin", "poltchageist",
+}
 
 
 class DamageCalculator:
@@ -566,11 +628,11 @@ class DamageCalculator:
     def grounded_attacker(self):
         if self.held_item_attacker() == "iron-ball":
             return True
-        return "flying" not in self.attacker.types and "levitate" not in self.attacker_abilities and "eelevate" not in self.attacker_abilities
+        return "flying" not in self.attacker.types and "levitate" not in self.attacker_abilities and "eelevate" not in self.attacker_abilities and self.held_item_attacker() != "air-balloon"
     def grounded_defender(self):
         if self.held_item_defender() == "iron-ball":
             return True
-        return "flying" not in self.defender.types and "levitate" not in self.defender_abilities and "eelevate" not in self.defender_abilities
+        return "flying" not in self.defender.types and "levitate" not in self.defender_abilities and "eelevate" not in self.defender_abilities and self.held_item_defender() != "air-balloon"
 
     # Rain, sun, and their primal versions boost or weaken moves of certain types.
     def weather_move_power(self):
@@ -5934,19 +5996,19 @@ class DamageCalculator:
             return True
         return locked_move is None or locked_move == self.move_name or self.move_name == "struggle"
 
-    # King's Rock: The Pokémon's damaging moves get a 10% chance to make the target flinch. Moves that can already flinch keep their own chance. Returns the flinch chance as a decimal.
+    # King's Rock and Razor Fang: The Pokémon's damaging moves get a 10% chance to make the target flinch. Moves that can already flinch keep their own chance. Returns the flinch chance as a decimal.
     def kings_rock_item_attacker(self):
         move_flinch_chance = 0
         if self.move_data.meta is not None:
             move_flinch_chance = (self.move_data.meta.get("flinch_chance") or 0) / 100
-        if self.held_item_attacker() != "kings-rock" or self.status_move() or move_flinch_chance > 0:
+        if self.held_item_attacker() not in ("kings-rock", "razor-fang") or self.status_move() or move_flinch_chance > 0:
             return move_flinch_chance
         return 0.10
     def kings_rock_item_defender(self):
         move_flinch_chance = 0
         if self.move_data.meta is not None:
             move_flinch_chance = (self.move_data.meta.get("flinch_chance") or 0) / 100
-        if self.held_item_defender() != "kings-rock" or self.status_move() or move_flinch_chance > 0:
+        if self.held_item_defender() not in ("kings-rock", "razor-fang") or self.status_move() or move_flinch_chance > 0:
             return move_flinch_chance
         return 0.10
 
@@ -6011,13 +6073,13 @@ class DamageCalculator:
             return current_hp - 1
         return damage
 
-    # Scope Lens: Raises the Pokémon's critical hit ratio by 1 stage. Returns how many crit stages it adds.
+    # Scope Lens and Razor Claw: Raise the Pokémon's critical hit ratio by 1 stage. Returns how many crit stages it adds.
     def scope_lens_item_attacker(self):
-        if self.held_item_attacker() != "scope-lens":
+        if self.held_item_attacker() not in ("scope-lens", "razor-claw"):
             return 0
         return 1
     def scope_lens_item_defender(self):
-        if self.held_item_defender() != "scope-lens":
+        if self.held_item_defender() not in ("scope-lens", "razor-claw"):
             return 0
         return 1
 
@@ -6280,15 +6342,15 @@ class DamageCalculator:
             return self.type_effectiveness_defender()
         return 1
 
-    # Lagging Tail: The Pokémon moves last among moves with the same priority. Returns the move's priority.
+    # Lagging Tail and Full Incense: The Pokémon moves last among moves with the same priority. Returns the move's priority.
     def lagging_tail_item_attacker(self):
         priority = self.move_data.priority
-        if self.held_item_attacker() != "lagging-tail":
+        if self.held_item_attacker() not in ("lagging-tail", "full-incense"):
             return priority
         return priority - 0.1
     def lagging_tail_item_defender(self):
         priority = self.move_data.priority
-        if self.held_item_defender() != "lagging-tail":
+        if self.held_item_defender() not in ("lagging-tail", "full-incense"):
             return priority
         return priority - 0.1
 
@@ -6411,3 +6473,172 @@ class DamageCalculator:
         if item not in PLATE_TYPES or not self.move_power or self.move_type != PLATE_TYPES[item]:
             return self.move_power
         return self.move_power * 1.2
+
+    # Red Orb: When Groudon switches in holding it, Groudon turns into Primal Groudon and its ability becomes Desolate Land. Returns its form name, types, stats and ability.
+    def red_orb_item_attacker(self):
+        if self.held_item_attacker() != "red-orb" or self.attacker.pokedex_id != 383:
+            return self.attacker.name, self.attacker.types, self.attacker.stats, self.attacker_abilities[0]
+        form = BATTLE_FORMS["groudon-primal"]
+        return "groudon-primal", form["types"], form["stats"], "desolate-land"
+    def red_orb_item_defender(self):
+        if self.held_item_defender() != "red-orb" or self.defender.pokedex_id != 383:
+            return self.defender.name, self.defender.types, self.defender.stats, self.defender_abilities[0]
+        form = BATTLE_FORMS["groudon-primal"]
+        return "groudon-primal", form["types"], form["stats"], "desolate-land"
+
+    # Blue Orb: When Kyogre switches in holding it, Kyogre turns into Primal Kyogre and its ability becomes Primordial Sea. Returns its form name, types, stats and ability.
+    def blue_orb_item_attacker(self):
+        if self.held_item_attacker() != "blue-orb" or self.attacker.pokedex_id != 382:
+            return self.attacker.name, self.attacker.types, self.attacker.stats, self.attacker_abilities[0]
+        form = BATTLE_FORMS["kyogre-primal"]
+        return "kyogre-primal", form["types"], form["stats"], "primordial-sea"
+    def blue_orb_item_defender(self):
+        if self.held_item_defender() != "blue-orb" or self.defender.pokedex_id != 382:
+            return self.defender.name, self.defender.types, self.defender.stats, self.defender_abilities[0]
+        form = BATTLE_FORMS["kyogre-primal"]
+        return "kyogre-primal", form["types"], form["stats"], "primordial-sea"
+
+    # Eviolite: Boosts the Defense and Sp. Def of a Pokémon that can still evolve by 50%. Returns its Defense and Sp. Def.
+    def eviolite_item_attacker(self):
+        defense = self.attacker.stats["defense"]
+        special_defense = self.attacker.stats["special-defense"]
+        if self.held_item_attacker() != "eviolite" or self.attacker.name not in NOT_FULLY_EVOLVED:
+            return defense, special_defense
+        return defense * 1.5, special_defense * 1.5
+    def eviolite_item_defender(self):
+        defense = self.defender.stats["defense"]
+        special_defense = self.defender.stats["special-defense"]
+        if self.held_item_defender() != "eviolite" or self.defender.name not in NOT_FULLY_EVOLVED:
+            return defense, special_defense
+        return defense * 1.5, special_defense * 1.5
+
+    # Float Stone: Halves the Pokémon's weight. Returns its weight.
+    def float_stone_item_attacker(self):
+        if self.held_item_attacker() != "float-stone":
+            return self.attacker.weight
+        return max(1, self.attacker.weight // 2)
+    def float_stone_item_defender(self):
+        if self.held_item_defender() != "float-stone":
+            return self.defender.weight
+        return max(1, self.defender.weight // 2)
+
+    # Rocky Helmet: When the Pokémon is hit by a contact move, the attacker loses 1/6 of its max HP. Returns the HP the attacker loses as a fraction of its max HP.
+    def rocky_helmet_item_attacker(self):
+        if self.held_item_attacker() != "rocky-helmet" or not self.contact_move() or self.type_effectiveness_attacker() == 0:
+            return 0
+        if "magic-guard" in self.defender_abilities:
+            return 0
+        return 1 / 6
+    def rocky_helmet_item_defender(self):
+        if self.held_item_defender() != "rocky-helmet" or not self.contact_move() or self.type_effectiveness_defender() == 0:
+            return 0
+        if "magic-guard" in self.attacker_abilities:
+            return 0
+        return 1 / 6
+
+    # Air Balloon: The Pokémon floats, so Ground-type moves don't affect it. The balloon pops when it's hit by any other move. Returns the move's power and True if the balloon pops.
+    # Air Balloon also means the Pokémon isn't grounded (handled in grounded_attacker / grounded_defender).
+    def air_balloon_item_attacker(self):
+        if self.held_item_attacker() != "air-balloon" or self.status_move():
+            return self.move_power, False
+        if self.move_type == "ground":
+            return 0, False
+        return self.move_power, self.type_effectiveness_attacker() > 0
+    def air_balloon_item_defender(self):
+        if self.held_item_defender() != "air-balloon" or self.status_move():
+            return self.move_power, False
+        if self.move_type == "ground":
+            return 0, False
+        return self.move_power, self.type_effectiveness_defender() > 0
+
+    # Red Card: When the Pokémon is hit by a move, the attacker is forced to switch out and the card is used up. Returns True if the attacker is forced out.
+    # current_hp = the holder's HP after the hit. Suction Cups, Guard Dog and Sheer Force stop it.
+    def red_card_item_attacker(self, current_hp):
+        if self.held_item_attacker() != "red-card" or self.status_move() or current_hp <= 0 or self.type_effectiveness_attacker() == 0:
+            return False
+        if "suction-cups" in self.defender_abilities or "guard-dog" in self.defender_abilities:
+            return False
+        return not self.sheer_force_effects_defender()
+    def red_card_item_defender(self, current_hp):
+        if self.held_item_defender() != "red-card" or self.status_move() or current_hp <= 0 or self.type_effectiveness_defender() == 0:
+            return False
+        if "suction-cups" in self.attacker_abilities or "guard-dog" in self.attacker_abilities:
+            return False
+        return not self.sheer_force_effects_attacker()
+
+    # Ring Target: The Pokémon loses its type immunities, so moves it would be immune to hit it for neutral dmg. Returns the type effectiveness.
+    def ring_target_item_attacker(self):
+        if self.held_item_attacker() != "ring-target":
+            return self.type_effectiveness_attacker()
+        removes_flying_weaknesses = self.weather_effects().get("removes_flying_weaknesses", False)
+        multiplier = 1
+        for type_name, type_data in zip(self.attacker.types, self.attacker_types_data):
+            if self.move_type in type_data["double_damage_from"]:
+                if not (removes_flying_weaknesses and type_name == "flying"):
+                    multiplier *= 2
+            elif self.move_type in type_data["half_damage_from"]:
+                multiplier *= 0.5
+        return multiplier
+    def ring_target_item_defender(self):
+        if self.held_item_defender() != "ring-target":
+            return self.type_effectiveness_defender()
+        removes_flying_weaknesses = self.weather_effects().get("removes_flying_weaknesses", False)
+        multiplier = 1
+        for type_name, type_data in zip(self.defender.types, self.defender_types_data):
+            if self.move_type in type_data["double_damage_from"]:
+                if not (removes_flying_weaknesses and type_name == "flying"):
+                    multiplier *= 2
+            elif self.move_type in type_data["half_damage_from"]:
+                multiplier *= 0.5
+        return multiplier
+
+    # Absorb Bulb: When the Pokémon is hit by a Water-type move, its Sp. Atk goes up 1 stage and the bulb is used up. Returns the Sp. Atk stage change.
+    def absorb_bulb_item_attacker(self):
+        if self.held_item_attacker() != "absorb-bulb" or self.move_type != "water" or self.status_move():
+            return 0
+        if self.type_effectiveness_attacker() == 0:
+            return 0
+        return 1
+    def absorb_bulb_item_defender(self):
+        if self.held_item_defender() != "absorb-bulb" or self.move_type != "water" or self.status_move():
+            return 0
+        if self.type_effectiveness_defender() == 0:
+            return 0
+        return 1
+
+    # Cell Battery: When the Pokémon is hit by an Electric-type move, its Attack goes up 1 stage and the battery is used up. Returns the Attack stage change.
+    def cell_battery_item_attacker(self):
+        if self.held_item_attacker() != "cell-battery" or self.move_type != "electric" or self.status_move():
+            return 0
+        if self.type_effectiveness_attacker() == 0:
+            return 0
+        return 1
+    def cell_battery_item_defender(self):
+        if self.held_item_defender() != "cell-battery" or self.move_type != "electric" or self.status_move():
+            return 0
+        if self.type_effectiveness_defender() == 0:
+            return 0
+        return 1
+
+    # Eject Button: When the Pokémon is hit by a move, it switches out and the button is used up. Returns True if it switches out.
+    # current_hp = the holder's HP after the hit. Sheer Force stops it.
+    def eject_button_item_attacker(self, current_hp):
+        if self.held_item_attacker() != "eject-button" or self.status_move() or current_hp <= 0 or self.type_effectiveness_attacker() == 0:
+            return False
+        return not self.sheer_force_effects_defender()
+    def eject_button_item_defender(self, current_hp):
+        if self.held_item_defender() != "eject-button" or self.status_move() or current_hp <= 0 or self.type_effectiveness_defender() == 0:
+            return False
+        return not self.sheer_force_effects_attacker()
+
+    # Gems (Fire Gem, Water Gem, etc.): Boost the power of the Pokémon's first move of the Gem's type by 30%, then the Gem is used up.
+    def gem_item_attacker(self):
+        item = self.held_item_attacker()
+        if item not in GEM_TYPES or not self.move_power or self.move_type != GEM_TYPES[item]:
+            return self.move_power
+        return self.move_power * 1.3
+    def gem_item_defender(self):
+        item = self.held_item_defender()
+        if item not in GEM_TYPES or not self.move_power or self.move_type != GEM_TYPES[item]:
+            return self.move_power
+        return self.move_power * 1.3
