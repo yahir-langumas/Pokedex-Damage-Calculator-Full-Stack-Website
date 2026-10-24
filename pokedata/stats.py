@@ -11,7 +11,7 @@ NATURES = {
 
 STAT_NAMES = ("hp", "attack", "defense", "special-attack", "special-defense", "speed")
 
-# Level 50 is the default since most competitive formats use it (VCG, Singles). Level 50 is also the max for now. 
+# Level 50 is the default since most competitive formats use it (VGC, Singles). Level 50 is also the max for now. 
 MIN_LEVEL = 1
 MAX_LEVEL = 50
 DEFAULT_LEVEL = 50

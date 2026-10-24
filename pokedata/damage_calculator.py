@@ -5,6 +5,8 @@ from pokedata.models import Learnset
 from pokedata.models import Type
 from pokedata.stats import NATURES, calculate_stats, make_build
 import random
+import math
+import copy
 
 # Hard coding moves and abilities that have special properties that effect damage calculations and interactions with other moves and abilities.
 
@@ -515,6 +517,48 @@ OGERPON_MASKS = {
     "wellspring-mask": ("water", "water-absorb"), "hearthflame-mask": ("fire", "mold-breaker"), "cornerstone-mask": ("rock", "sturdy"),
 }
 
+# Moves that always land a critical hit.
+ALWAYS_CRIT_MOVES = {"flower-trick", "frost-breath", "storm-throw", "surging-strikes", "wicked-blow"}
+
+# Moves that ignore the target's Defense and Sp. Def changes.
+IGNORE_DEFENSE_STAGE_MOVES = {"chip-away", "darkest-lariat", "sacred-sword"}
+
+# Special moves that hit the target's Defense instead of its Sp. Def.
+PHYSICAL_DEFENSE_SPECIAL_MOVES = {"psyshock", "psystrike", "secret-sword"}
+
+# Moves that ignore the target's ability, like Mold Breaker.
+ABILITY_IGNORING_MOVES = {"moongeist-beam", "photon-geyser", "sunsteel-strike"}
+
+# Moves calculate() can't work out yet, since they depend on things it doesn't track (dmg taken earlier, Stockpile, the party, random power, etc.).
+UNSUPPORTED_DAMAGE_MOVES = {
+    "beat-up", "bide", "comeuppance", "counter", "fling", "magnitude", "metal-burst", "mirror-coat",
+    "natural-gift", "present", "psywave", "spit-up", "trump-card",
+}
+
+# Z-Moves and Max Moves. They need Z-Crystals or Dynamax, which aren't in the calc, so they're skipped. (The Z-Moves with -- in their names are skipped too.)
+Z_AND_MAX_MOVES = {
+    "10-000-000-volt-thunderbolt", "catastropika", "clangorous-soulblaze", "extreme-evoboost", "genesis-supernova", "guardian-of-alola",
+    "lets-snuggle-forever", "light-that-burns-the-sky", "malicious-moonsault", "max-airstream", "max-darkness", "max-flare", "max-flutterby",
+    "max-geyser", "max-guard", "max-hailstorm", "max-knuckle", "max-lightning", "max-mindstorm", "max-ooze", "max-overgrowth", "max-phantasm",
+    "max-quake", "max-rockfall", "max-starfall", "max-steelspike", "max-strike", "max-wyrmwind", "menacing-moonraze-maelstrom", "oceanic-operetta",
+    "pulverizing-pancake", "searing-sunraze-smash", "sinister-arrow-raid", "soul-stealing-7-star-strike", "splintered-stormshards", "stoked-sparksurfer",
+}
+
+# Newer multi-hit moves PokeAPI doesn't have hit counts for.
+MISSING_HIT_COUNTS = {"population-bomb": 10, "tachyon-cutter": 2, "triple-dive": 3, "twin-beam": 2}
+
+# Hidden Power's type comes from the Pokémon's IVs, in this order.
+HIDDEN_POWER_TYPES = ["fighting", "flying", "poison", "ground", "rock", "bug", "ghost", "steel", "fire", "water", "grass", "electric", "psychic", "ice", "dragon", "dark"]
+
+# Moves whose power is based on friendship. Max friendship gives 102 power.
+FRIENDSHIP_MOVES = {"frustration", "pika-papow", "return", "veevee-volley"}
+
+# Items Knock Off can't remove from these Pokémon, so it doesn't get its power boost. (item, pokedex number)
+UNREMOVABLE_ITEMS = {
+    "red-orb": 383, "blue-orb": 382, "adamant-crystal": 483, "lustrous-globe": 484, "griseous-core": 487,
+    "wellspring-mask": 1017, "hearthflame-mask": 1017, "cornerstone-mask": 1017,
+}
+
 # Pokémon that can still evolve. Eviolite only works on these.
 NOT_FULLY_EVOLVED = {
     "bulbasaur", "ivysaur", "charmander", "charmeleon", "squirtle", "wartortle", "caterpie", "metapod", "weedle",
@@ -565,6 +609,68 @@ NOT_FULLY_EVOLVED = {
     "toedscool", "capsakid", "rellor", "flittle", "tinkatink", "tinkatuff", "wiglett", "finizen", "varoom",
     "glimmet", "greavard", "cetoddle", "frigibax", "arctibax", "gimmighoul", "dipplin", "poltchageist",
 }
+
+
+# -------- Damage math helpers --------
+# The games do the damage math with whole numbers out of 4096 instead of decimals, so these copy how they round.
+
+# Rounds like the games do. Exactly .5 rounds down and anything over .5 rounds up.
+def poke_round(number):
+    return math.ceil(number) if number % 1 > 0.5 else math.floor(number)
+
+# Turns a multiplier like 1.5 into the out-of-4096 modifier the games use (6144).
+def to_4096(multiplier):
+    return round(multiplier * 4096)
+
+# Combines modifiers (out of 4096) one at a time, rounding after each one like the games do. Returns the combined modifier.
+def chain_modifiers(modifiers, lower_bound, upper_bound):
+    total = 4096
+    for modifier in modifiers:
+        if modifier != 4096:
+            total = (total * modifier + 2048) >> 12
+    return max(min(total, upper_bound), lower_bound)
+
+# Applies a stat stage (-6 to +6) to a stat. +1 = 1.5x, +2 = 2x, -1 = 2/3, -2 = 1/2, etc.
+def apply_stage(stat, stage):
+    stage = max(-6, min(6, stage))
+    if stage >= 0:
+        return stat * (2 + stage) // 2
+    return stat * 2 // (2 - stage)
+
+# Describes how many hits it takes to KO, like Smogon's calc. Ignores recovery and end-of-turn dmg.
+# rolls = the 16 total dmg rolls. hp = the defender's current HP.
+def ko_chance_text(rolls, hp):
+    if max(rolls) == 0:
+        return "No damage"
+    if min(rolls) >= hp:
+        return "Guaranteed OHKO"
+    if max(rolls) >= hp:
+        chance = sum(1 for roll in rolls if roll >= hp) / 16 * 100
+        return f"{chance:.1f}% chance to OHKO"
+    fewest_hits = math.ceil(hp / max(rolls))
+    most_hits = math.ceil(hp / min(rolls))
+    if fewest_hits == most_hits:
+        return f"Guaranteed {fewest_hits}HKO"
+    return f"Possible {fewest_hits}HKO"
+
+# Turns a before and after value into a modifier out of 4096. Returns 4096 (no change) if nothing changed.
+def modifier_from(new_value, old_value):
+    if not old_value or new_value is None or new_value == old_value:
+        return 4096
+    return to_4096(new_value / old_value)
+
+# The 16 random dmg rolls (85% to 100%) for one hit, with STAB, type effectiveness, burn and the final modifiers applied in the games' order.
+def damage_rolls(base_damage, stab, effectiveness, burned, final_modifier):
+    rolls = []
+    for roll in range(85, 101):
+        damage = base_damage * roll // 100
+        if stab != 4096:
+            damage = damage * stab / 4096
+        damage = math.floor(poke_round(damage) * effectiveness)
+        if burned:
+            damage = damage // 2
+        rolls.append(poke_round(max(1, damage * final_modifier / 4096)))
+    return rolls
 
 
 class DamageCalculator:
@@ -5098,13 +5204,13 @@ class DamageCalculator:
         if "orichalcum-pulse" not in self.attacker_abilities:
             return self.attacker_stats["attack"]
         if self.utility_umbrella_item_attacker() in ("sun", "extreme-sun"):
-            return self.attacker_stats["attack"] * 1.33
+            return self.attacker_stats["attack"] * 4 / 3
         return self.attacker_stats["attack"]
     def orichalcum_pulse_attack_defender(self):
         if "orichalcum-pulse" not in self.defender_abilities:
             return self.defender_stats["attack"]
         if self.utility_umbrella_item_defender() in ("sun", "extreme-sun"):
-            return self.defender_stats["attack"] * 1.33
+            return self.defender_stats["attack"] * 4 / 3
         return self.defender_stats["attack"]
 
     # Hadron Engine: Sets Electric Terrain for 5 turns when the Pokémon enters battle. Returns the terrain.
@@ -5125,11 +5231,11 @@ class DamageCalculator:
     def hadron_engine_special_attack_attacker(self):
         if "hadron-engine" not in self.attacker_abilities or self.terrain != "electric-terrain":
             return self.attacker_stats["special-attack"]
-        return self.attacker_stats["special-attack"] * 1.33
+        return self.attacker_stats["special-attack"] * 4 / 3
     def hadron_engine_special_attack_defender(self):
         if "hadron-engine" not in self.defender_abilities or self.terrain != "electric-terrain":
             return self.defender_stats["special-attack"]
-        return self.defender_stats["special-attack"] * 1.33
+        return self.defender_stats["special-attack"] * 4 / 3
 
     # Opportunist: When an opposing Pokémon's stats go up, the Pokémon copies the boost. Returns the stage change it copies.
     # stage_change = how many stages the opposing Pokémon's stat changed.
@@ -7002,3 +7108,133 @@ class DamageCalculator:
         if item not in OGERPON_MASKS or self.move_name != "ivy-cudgel":
             return self.move_type
         return OGERPON_MASKS[item][0]
+
+    # -------- Damage Calculation --------
+    # calculate() puts everything together and works out the dmg the attacker's move does to the defender, the same way the Gen 9 games (and Smogon's calc) do.
+    # Order: battle forms -> abilities that get ignored -> move type -> immunities -> base power -> attack -> defense -> base dmg -> weather and crit -> 16 random rolls -> STAB -> type effectiveness -> burn -> final modifiers.
+    # Only works attacker to defender -> Will add defenderr to attacker soon. 
+
+    # The Pokémon's Speed after stat stages, abilities, items and paralysis. Used for turn order and moves like Gyro Ball.
+    # boosts = its stat stages, like {"speed": 1}.
+    def final_speed_attacker(self, boosts=None):
+        boosts = boosts or {}
+        base_speed = self.attacker_stats["speed"]
+        speed = apply_stage(base_speed, boosts.get("speed", 0))
+        modifiers = []
+        for new_speed in (self.swift_swim_ability_attacker(), self.chlorophyll_ability_attacker(), self.sand_rush_ability_attacker(), self.slush_rush_ability_attacker(),
+                          self.surge_surfer_ability_attacker(), self.quick_feet_ability_attacker(), self.choice_scarf_item_attacker(), self.iron_ball_item_attacker(),
+                          self.macho_brace_item_attacker(), self.power_item_attacker(), self.quick_powder_item_attacker()):
+            modifiers.append(modifier_from(new_speed, base_speed))
+        if self.paradox_boosted_stat_attacker(boosts) == "speed":
+            modifiers.append(6144)
+        speed = poke_round(speed * chain_modifiers(modifiers, 410, 131172) / 4096)
+        if self.status_attacker == "paralysis" and "quick-feet" not in self.attacker_abilities:
+            speed = speed // 2
+        return speed
+    def final_speed_defender(self, boosts=None):
+        boosts = boosts or {}
+        base_speed = self.defender_stats["speed"]
+        speed = apply_stage(base_speed, boosts.get("speed", 0))
+        modifiers = []
+        for new_speed in (self.swift_swim_ability_defender(), self.chlorophyll_ability_defender(), self.sand_rush_ability_defender(), self.slush_rush_ability_defender(),
+                          self.surge_surfer_ability_defender(), self.quick_feet_ability_defender(), self.choice_scarf_item_defender(), self.iron_ball_item_defender(),
+                          self.macho_brace_item_defender(), self.power_item_defender(), self.quick_powder_item_defender()):
+            modifiers.append(modifier_from(new_speed, base_speed))
+        if self.paradox_boosted_stat_defender(boosts) == "speed":
+            modifiers.append(6144)
+        speed = poke_round(speed * chain_modifiers(modifiers, 410, 131172) / 4096)
+        if self.status_defender == "paralysis" and "quick-feet" not in self.defender_abilities:
+            speed = speed // 2
+        return speed
+
+    # Protosynthesis and Quark Drive boost the Pokémon's highest stat, counting stat stages. Returns that stat, or None if neither is active.
+    # boosts = its stat stages.
+    def paradox_boosted_stat_attacker(self, boosts=None):
+        boosts = boosts or {}
+        booster_energy = self.booster_energy_item_attacker()
+        if self.protosynthesis_ability_attacker(booster_energy)[0] is None and self.quark_drive_ability_attacker(booster_energy)[0] is None:
+            return None
+        return max(("attack", "defense", "special-attack", "special-defense", "speed"), key=lambda stat: apply_stage(self.attacker_stats[stat], boosts.get(stat, 0)))
+    def paradox_boosted_stat_defender(self, boosts=None):
+        boosts = boosts or {}
+        booster_energy = self.booster_energy_item_defender()
+        if self.protosynthesis_ability_defender(booster_energy)[0] is None and self.quark_drive_ability_defender(booster_energy)[0] is None:
+            return None
+        return max(("attack", "defense", "special-attack", "special-defense", "speed"), key=lambda stat: apply_stage(self.defender_stats[stat], boosts.get(stat, 0)))
+
+    # The Pokémon's weight in hectograms (same as the database) after Heavy Metal, Light Metal and Float Stone.
+    def final_weight_attacker(self):
+        weight = self.heavy_metal_ability_attacker()
+        if weight == self.attacker.weight:
+            weight = self.light_metal_ability_attacker()
+        if self.held_item_attacker() == "float-stone":
+            weight = max(1, weight // 2)
+        return weight
+    def final_weight_defender(self):
+        weight = self.heavy_metal_ability_defender()
+        if weight == self.defender.weight:
+            weight = self.light_metal_ability_defender()
+        if self.held_item_defender() == "float-stone":
+            weight = max(1, weight // 2)
+        return weight
+
+    # Swaps in a new form for the attacker or defender for the rest of the calc. The form's base stats go through calculate_stats with the same build.
+    # side = "attacker" or "defender".
+    def change_form(self, side, name, types, base_stats, ability):
+        form = copy.copy(getattr(self, side))
+        form.name = name
+        form.types = list(types)
+        form.stats = dict(base_stats)
+        setattr(self, side, form)
+        setattr(self, f"{side}_types_data", [Type.objects.get(name=t).type_data for t in form.types])
+        setattr(self, f"{side}_stats", calculate_stats(form.stats, getattr(self, f"{side}_build"), form.pokedex_id))
+        setattr(self, f"{side}_abilities", [ability])
+
+    # Changes each Pokémon into the form its held item forces (Primal Groudon and Kyogre, the Origin Formes, Ogerpon's masks, Arceus's Plates, Silvally's Memories),
+    # Castform into its weather form, and Aegislash into Blade Forme when it attacks.
+    def use_battle_forms(self):
+        for form_function in (self.red_orb_item_attacker, self.blue_orb_item_attacker, self.origin_forme_item_attacker, self.ogerpon_mask_form_item_attacker):
+            name, types, base_stats, ability = form_function()
+            if name != self.attacker.name:
+                self.change_form("attacker", name, types, base_stats, ability)
+                break
+        for form_function in (self.red_orb_item_defender, self.blue_orb_item_defender, self.origin_forme_item_defender, self.ogerpon_mask_form_item_defender):
+            name, types, base_stats, ability = form_function()
+            if name != self.defender.name:
+                self.change_form("defender", name, types, base_stats, ability)
+                break
+        if "multitype" in self.attacker_abilities and self.attacker.pokedex_id == 493 and self.multitype_ability_attacker(self.attacker_item) != self.attacker.types:
+            types = self.multitype_ability_attacker(self.attacker_item)
+            self.change_form("attacker", "arceus-" + types[0], types, self.attacker.stats, "multitype")
+        if "multitype" in self.defender_abilities and self.defender.pokedex_id == 493 and self.multitype_ability_defender(self.defender_item) != self.defender.types:
+            types = self.multitype_ability_defender(self.defender_item)
+            self.change_form("defender", "arceus-" + types[0], types, self.defender.stats, "multitype")
+        if "rks-system" in self.attacker_abilities and self.attacker.pokedex_id == 773 and self.rks_system_ability_attacker(self.attacker_item) != self.attacker.types:
+            types = self.rks_system_ability_attacker(self.attacker_item)
+            self.change_form("attacker", "silvally-" + types[0], types, self.attacker.stats, "rks-system")
+        if "rks-system" in self.defender_abilities and self.defender.pokedex_id == 773 and self.rks_system_ability_defender(self.defender_item) != self.defender.types:
+            types = self.rks_system_ability_defender(self.defender_item)
+            self.change_form("defender", "silvally-" + types[0], types, self.defender.stats, "rks-system")
+        castform_forms = {"fire": "castform-sunny", "water": "castform-rainy", "ice": "castform-snowy"}
+        if self.attacker.pokedex_id == 351 and self.forecast_ability_attacker() != self.attacker.types:
+            types = self.forecast_ability_attacker()
+            self.change_form("attacker", castform_forms[types[0]], types, self.attacker.stats, "forecast")
+        if self.defender.pokedex_id == 351 and self.forecast_ability_defender() != self.defender.types:
+            types = self.forecast_ability_defender()
+            self.change_form("defender", castform_forms[types[0]], types, self.defender.stats, "forecast")
+        name, types, base_stats = self.stance_change_ability_attacker()
+        if name != self.attacker.name:
+            self.change_form("attacker", name, types, base_stats, self.attacker_abilities[0])
+
+    # Neutralizing Gas, Mold Breaker (and the moves that act like it) stop the other Pokémon's abilities from working for this calc.
+    def ignore_abilities(self):
+        attacker_abilities = self.neutralizing_gas_ability_defender()
+        defender_abilities = self.neutralizing_gas_ability_attacker()
+        self.attacker_abilities = attacker_abilities or [""]
+        self.defender_abilities = defender_abilities or [""]
+        for ability_breaker in (self.mold_breaker_ability_attacker, self.teravolt_ability_attacker, self.turboblaze_ability_attacker):
+            self.defender_abilities = ability_breaker() or [""]
+        if self.move_name in ABILITY_IGNORING_MOVES and not self.ability_shield_item_defender():
+            self.defender_abilities = [ability for ability in self.defender_abilities if ability not in BREAKABLE_ABILITIES] or [""]
+
+  
