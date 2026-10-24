@@ -259,7 +259,7 @@ BREAKABLE_ABILITIES = {
 
 # Items that still work with Klutz.
 KLUTZ_EXCEPTIONS = {
-    "macho-brace", "power-anklet", "power-band", "power-belt", "power-bracer", "power-lens", "power-weight",
+    "ability-shield", "macho-brace", "power-anklet", "power-band", "power-belt", "power-bracer", "power-lens", "power-weight",
 }
 
 # Recoil and crash moves Reckless boosts.
@@ -381,6 +381,9 @@ BATTLE_FORMS = {
     "terapagos-terastal": {"types": ["normal"], "stats": {"hp": 95, "attack": 95, "defense": 110, "special-attack": 105, "special-defense": 110, "speed": 85}},
     "groudon-primal": {"types": ["ground", "fire"], "stats": {"hp": 100, "attack": 180, "defense": 160, "special-attack": 150, "special-defense": 90, "speed": 90}},
     "kyogre-primal": {"types": ["water"], "stats": {"hp": 100, "attack": 150, "defense": 90, "special-attack": 180, "special-defense": 160, "speed": 90}},
+    "dialga-origin": {"types": ["steel", "dragon"], "stats": {"hp": 100, "attack": 100, "defense": 120, "special-attack": 150, "special-defense": 120, "speed": 90}},
+    "palkia-origin": {"types": ["water", "dragon"], "stats": {"hp": 90, "attack": 100, "defense": 100, "special-attack": 150, "special-defense": 120, "speed": 120}},
+    "giratina-origin": {"types": ["ghost", "dragon"], "stats": {"hp": 150, "attack": 120, "defense": 100, "special-attack": 120, "special-defense": 100, "speed": 90}},
 }
 
 # Moves Parental Bond doesn't make hit twice (charge moves, future moves and moves that only work once).
@@ -460,7 +463,7 @@ RESIST_BERRIES = {
     "occa-berry": "fire", "passho-berry": "water", "wacan-berry": "electric", "rindo-berry": "grass", "yache-berry": "ice",
     "chople-berry": "fighting", "kebia-berry": "poison", "shuca-berry": "ground", "coba-berry": "flying", "payapa-berry": "psychic",
     "tanga-berry": "bug", "charti-berry": "rock", "kasib-berry": "ghost", "haban-berry": "dragon", "colbur-berry": "dark",
-    "babiri-berry": "steel", "chilan-berry": "normal",
+    "babiri-berry": "steel", "chilan-berry": "normal", "roseli-berry": "fairy",
 }
 
 # The stat each pinch Berry raises when the Pokémon's HP gets low.
@@ -474,7 +477,7 @@ TYPE_BOOST_ITEMS = {
     "black-glasses": "dark", "black-belt": "fighting", "magnet": "electric", "mystic-water": "water", "sharp-beak": "flying",
     "poison-barb": "poison", "never-melt-ice": "ice", "spell-tag": "ghost", "twisted-spoon": "psychic", "charcoal": "fire",
     "dragon-fang": "dragon", "silk-scarf": "normal", "sea-incense": "water", "odd-incense": "psychic", "rock-incense": "rock",
-    "wave-incense": "water", "rose-incense": "grass",
+    "wave-incense": "water", "rose-incense": "grass", "fairy-feather": "fairy",
 }
 
 # Choice items lock the Pokémon into the first move it uses.
@@ -494,7 +497,29 @@ GEM_TYPES = {
     "fire-gem": "fire", "water-gem": "water", "electric-gem": "electric", "grass-gem": "grass", "ice-gem": "ice",
     "fighting-gem": "fighting", "poison-gem": "poison", "ground-gem": "ground", "flying-gem": "flying",
     "psychic-gem": "psychic", "bug-gem": "bug", "rock-gem": "rock", "ghost-gem": "ghost", "dragon-gem": "dragon",
-    "dark-gem": "dark", "steel-gem": "steel", "normal-gem": "normal",
+    "dark-gem": "dark", "steel-gem": "steel", "normal-gem": "normal", "fairy-gem": "fairy",
+}
+
+# Moves that do a set amount of dmg. Weakness Policy doesn't activate from these.
+FIXED_DAMAGE_MOVES = {
+    "comeuppance", "counter", "dragon-rage", "endeavor", "final-gambit", "metal-burst", "mirror-coat",
+    "natures-madness", "night-shade", "psywave", "ruination", "seismic-toss", "sonic-boom", "super-fang",
+}
+
+# The terrain each Terrain Seed activates in, and the stat it raises.
+TERRAIN_SEEDS = {
+    "electric-seed": ("electric-terrain", "defense"), "grassy-seed": ("grassy-terrain", "defense"),
+    "misty-seed": ("misty-terrain", "special-defense"), "psychic-seed": ("psychic-terrain", "special-defense"),
+}
+
+# The Pokémon each Origin Forme item works on and the form it changes into.
+ORIGIN_FORME_ITEMS = {
+    "adamant-crystal": (483, "dialga-origin"), "lustrous-globe": (484, "palkia-origin"), "griseous-core": (487, "giratina-origin"),
+}
+
+# Ogerpon's masks: the type each one adds and the ability Ogerpon gets.
+OGERPON_MASKS = {
+    "wellspring-mask": ("water", "water-absorb"), "hearthflame-mask": ("fire", "mold-breaker"), "cornerstone-mask": ("rock", "sturdy"),
 }
 
 # Pokémon that can still evolve. Eviolite only works on these.
@@ -639,6 +664,11 @@ class DamageCalculator:
         if not self.move_power:
             return self.move_power
         effects = self.weather_effects()
+        if effects.get("weakened_type") == self.move_type and effects["weaken_multiplier"] == 0:
+            return 0
+        # Utility Umbrella on the target cancels the sun and rain boost or drop.
+        if self.utility_umbrella_item_defender() != self.current_weather():
+            return self.move_power
         if effects.get("boosted_type") == self.move_type:
             return self.move_power * effects["boost_multiplier"]
         if effects.get("weakened_type") == self.move_type:
@@ -663,7 +693,7 @@ class DamageCalculator:
     # Wonder Guard does NOT block this, since it only stops direct attacks. (HAHA, I know, right? Wonder Guard is a terrible ability. Its not Im joking!)
     def weather_damage_attacker(self):
         effects = self.weather_effects()
-        if "self_inflicted_dmg" not in effects:
+        if "self_inflicted_dmg" not in effects or self.held_item_attacker() == "safety-goggles":
             return 0
         for t in self.attacker.types:
             if t in effects["immune_types"]:
@@ -674,7 +704,7 @@ class DamageCalculator:
         return effects["self_inflicted_dmg"]
     def weather_damage_defender(self):
         effects = self.weather_effects()
-        if "self_inflicted_dmg" not in effects:
+        if "self_inflicted_dmg" not in effects or self.held_item_defender() == "safety-goggles":
             return 0
         for t in self.defender.types:
             if t in effects["immune_types"]:
@@ -1361,6 +1391,8 @@ class DamageCalculator:
         for ability in self.defender_abilities:
             if ability in INTIMIDATE_IMMUNITY_ABILITIES:
                 return self.defender.stats["attack"]
+        if self.held_item_defender() == "clear-amulet":
+            return self.defender.stats["attack"]
         if "guard-dog" in self.defender_abilities:
             return self.defender.stats["attack"] * 1.5
         return self.defender.stats["attack"] * 2 / 3
@@ -1370,6 +1402,8 @@ class DamageCalculator:
         for ability in self.attacker_abilities:
             if ability in INTIMIDATE_IMMUNITY_ABILITIES:
                 return self.attacker.stats["attack"]
+        if self.held_item_attacker() == "clear-amulet":
+            return self.attacker.stats["attack"]
         if "guard-dog" in self.attacker_abilities:
             return self.attacker.stats["attack"] * 1.5
         return self.attacker.stats["attack"] * 2 / 3
@@ -1406,7 +1440,7 @@ class DamageCalculator:
     def effect_spore_ability_attacker(self):
         if "effect-spore" not in self.attacker_abilities or not self.contact_move():
             return self.status_defender
-        if "grass" in self.defender.types or "overcoat" in self.defender_abilities or self.status_effects_defender():
+        if "grass" in self.defender.types or "overcoat" in self.defender_abilities or self.held_item_defender() == "safety-goggles" or self.status_effects_defender():
             return self.status_defender
         roll = random.random()
         if roll < 0.11:
@@ -1423,7 +1457,7 @@ class DamageCalculator:
     def effect_spore_ability_defender(self):
         if "effect-spore" not in self.defender_abilities or not self.contact_move():
             return self.status_attacker
-        if "grass" in self.attacker.types or "overcoat" in self.attacker_abilities or self.status_effects_attacker():
+        if "grass" in self.attacker.types or "overcoat" in self.attacker_abilities or self.held_item_attacker() == "safety-goggles" or self.status_effects_attacker():
             return self.status_attacker
         roll = random.random()
         if roll < 0.11:
@@ -1515,13 +1549,13 @@ class DamageCalculator:
     def swift_swim_ability_attacker(self):
         if "swift-swim" not in self.attacker_abilities:
             return self.attacker.stats["speed"]
-        if self.current_weather() in ("rain", "heavy-rain"):
+        if self.utility_umbrella_item_attacker() in ("rain", "heavy-rain"):
             return self.attacker.stats["speed"] * 2
         return self.attacker.stats["speed"]
     def swift_swim_ability_defender(self):
         if "swift-swim" not in self.defender_abilities:
             return self.defender.stats["speed"]
-        if self.current_weather() in ("rain", "heavy-rain"):
+        if self.utility_umbrella_item_defender() in ("rain", "heavy-rain"):
             return self.defender.stats["speed"] * 2
         return self.defender.stats["speed"]
 
@@ -1529,13 +1563,13 @@ class DamageCalculator:
     def chlorophyll_ability_attacker(self):
         if "chlorophyll" not in self.attacker_abilities:
             return self.attacker.stats["speed"]
-        if self.current_weather() in ("sun", "extreme-sun"):
+        if self.utility_umbrella_item_attacker() in ("sun", "extreme-sun"):
             return self.attacker.stats["speed"] * 2
         return self.attacker.stats["speed"]
     def chlorophyll_ability_defender(self):
         if "chlorophyll" not in self.defender_abilities:
             return self.defender.stats["speed"]
-        if self.current_weather() in ("sun", "extreme-sun"):
+        if self.utility_umbrella_item_defender() in ("sun", "extreme-sun"):
             return self.defender.stats["speed"] * 2
         return self.defender.stats["speed"]
 
@@ -1683,13 +1717,13 @@ class DamageCalculator:
     def rain_dish_ability_attacker(self):
         if "rain-dish" not in self.attacker_abilities:
             return 0
-        if self.current_weather() in ("rain", "heavy-rain"):
+        if self.utility_umbrella_item_attacker() in ("rain", "heavy-rain"):
             return 0.0625
         return 0
     def rain_dish_ability_defender(self):
         if "rain-dish" not in self.defender_abilities:
             return 0
-        if self.current_weather() in ("rain", "heavy-rain"):
+        if self.utility_umbrella_item_defender() in ("rain", "heavy-rain"):
             return 0.0625
         return 0
 
@@ -1910,7 +1944,7 @@ class DamageCalculator:
     def forecast_ability_attacker(self):
         if "forecast" not in self.attacker_abilities:
             return self.attacker.types
-        weather = self.current_weather()
+        weather = self.utility_umbrella_item_attacker()
         if weather in ("sun", "extreme-sun"):
             return ["fire"]
         if weather in ("rain", "heavy-rain"):
@@ -1921,7 +1955,7 @@ class DamageCalculator:
     def forecast_ability_defender(self):
         if "forecast" not in self.defender_abilities:
             return self.defender.types
-        weather = self.current_weather()
+        weather = self.utility_umbrella_item_defender()
         if weather in ("sun", "extreme-sun"):
             return ["fire"]
         if weather in ("rain", "heavy-rain"):
@@ -2261,17 +2295,17 @@ class DamageCalculator:
     def dry_skin_weather_attacker(self):
         if "dry-skin" not in self.attacker_abilities:
             return 0
-        if self.current_weather() in ("rain", "heavy-rain"):
+        if self.utility_umbrella_item_attacker() in ("rain", "heavy-rain"):
             return 0.125
-        if self.current_weather() in ("sun", "extreme-sun"):
+        if self.utility_umbrella_item_attacker() in ("sun", "extreme-sun"):
             return -0.125
         return 0
     def dry_skin_weather_defender(self):
         if "dry-skin" not in self.defender_abilities:
             return 0
-        if self.current_weather() in ("rain", "heavy-rain"):
+        if self.utility_umbrella_item_defender() in ("rain", "heavy-rain"):
             return 0.125
-        if self.current_weather() in ("sun", "extreme-sun"):
+        if self.utility_umbrella_item_defender() in ("sun", "extreme-sun"):
             return -0.125
         return 0
 
@@ -2367,13 +2401,13 @@ class DamageCalculator:
     def hydration_ability_attacker(self):
         if "hydration" not in self.attacker_abilities:
             return self.status_attacker
-        if self.current_weather() in ("rain", "heavy-rain"):
+        if self.utility_umbrella_item_attacker() in ("rain", "heavy-rain"):
             return None
         return self.status_attacker
     def hydration_ability_defender(self):
         if "hydration" not in self.defender_abilities:
             return self.status_defender
-        if self.current_weather() in ("rain", "heavy-rain"):
+        if self.utility_umbrella_item_defender() in ("rain", "heavy-rain"):
             return None
         return self.status_defender
 
@@ -2381,13 +2415,13 @@ class DamageCalculator:
     def solar_power_ability_attacker(self):
         if "solar-power" not in self.attacker_abilities:
             return self.attacker.stats["special-attack"]
-        if self.current_weather() in ("sun", "extreme-sun"):
+        if self.utility_umbrella_item_attacker() in ("sun", "extreme-sun"):
             return self.attacker.stats["special-attack"] * 1.5
         return self.attacker.stats["special-attack"]
     def solar_power_ability_defender(self):
         if "solar-power" not in self.defender_abilities:
             return self.defender.stats["special-attack"]
-        if self.current_weather() in ("sun", "extreme-sun"):
+        if self.utility_umbrella_item_defender() in ("sun", "extreme-sun"):
             return self.defender.stats["special-attack"] * 1.5
         return self.defender.stats["special-attack"]
 
@@ -2395,13 +2429,13 @@ class DamageCalculator:
     def solar_power_damage_attacker(self):
         if "solar-power" not in self.attacker_abilities:
             return 0
-        if self.current_weather() in ("sun", "extreme-sun"):
+        if self.utility_umbrella_item_attacker() in ("sun", "extreme-sun"):
             return 0.125
         return 0
     def solar_power_damage_defender(self):
         if "solar-power" not in self.defender_abilities:
             return 0
-        if self.current_weather() in ("sun", "extreme-sun"):
+        if self.utility_umbrella_item_defender() in ("sun", "extreme-sun"):
             return 0.125
         return 0
 
@@ -2481,13 +2515,13 @@ class DamageCalculator:
     def leaf_guard_ability_attacker(self):
         if "leaf-guard" not in self.attacker_abilities:
             return self.status_attacker
-        if self.current_weather() in ("sun", "extreme-sun"):
+        if self.utility_umbrella_item_attacker() in ("sun", "extreme-sun"):
             return None
         return self.status_attacker
     def leaf_guard_ability_defender(self):
         if "leaf-guard" not in self.defender_abilities:
             return self.status_defender
-        if self.current_weather() in ("sun", "extreme-sun"):
+        if self.utility_umbrella_item_defender() in ("sun", "extreme-sun"):
             return None
         return self.status_defender
 
@@ -2503,11 +2537,11 @@ class DamageCalculator:
 
     # Mold Breaker: The Pokémon's moves ignore abilities that would block or weaken them. Returns the target's abilities that still work.
     def mold_breaker_ability_attacker(self):
-        if "mold-breaker" not in self.attacker_abilities:
+        if "mold-breaker" not in self.attacker_abilities or self.ability_shield_item_defender():
             return self.defender_abilities
         return [ability for ability in self.defender_abilities if ability not in BREAKABLE_ABILITIES]
     def mold_breaker_ability_defender(self):
-        if "mold-breaker" not in self.defender_abilities:
+        if "mold-breaker" not in self.defender_abilities or self.ability_shield_item_attacker():
             return self.attacker_abilities
         return [ability for ability in self.attacker_abilities if ability not in BREAKABLE_ABILITIES]
 
@@ -2746,7 +2780,7 @@ class DamageCalculator:
         special_defense = self.attacker.stats["special-defense"]
         if "flower-gift" not in self.attacker_abilities or not self.attacker.name.startswith("cherrim"):
             return attack, special_defense
-        if self.current_weather() in ("sun", "extreme-sun"):
+        if self.utility_umbrella_item_attacker() in ("sun", "extreme-sun"):
             return attack * 1.5, special_defense * 1.5
         return attack, special_defense
     def flower_gift_ability_defender(self):
@@ -2754,7 +2788,7 @@ class DamageCalculator:
         special_defense = self.defender.stats["special-defense"]
         if "flower-gift" not in self.defender_abilities or not self.defender.name.startswith("cherrim"):
             return attack, special_defense
-        if self.current_weather() in ("sun", "extreme-sun"):
+        if self.utility_umbrella_item_defender() in ("sun", "extreme-sun"):
             return attack * 1.5, special_defense * 1.5
         return attack, special_defense
         # Will add the boost for allies later for doubles.
@@ -2999,7 +3033,7 @@ class DamageCalculator:
     def poison_touch_ability_attacker(self):
         if "poison-touch" not in self.attacker_abilities or not self.contact_move():
             return self.status_defender
-        if "shield-dust" in self.defender_abilities:
+        if "shield-dust" in self.defender_abilities or self.held_item_defender() == "covert-cloak":
             return self.status_defender
         if self.status_effects_defender() or self.status_immune_defender("poison"):
             return self.status_defender
@@ -3009,7 +3043,7 @@ class DamageCalculator:
     def poison_touch_ability_defender(self):
         if "poison-touch" not in self.defender_abilities or not self.contact_move():
             return self.status_attacker
-        if "shield-dust" in self.attacker_abilities:
+        if "shield-dust" in self.attacker_abilities or self.held_item_attacker() == "covert-cloak":
             return self.status_attacker
         if self.status_effects_attacker() or self.status_immune_attacker("poison"):
             return self.status_attacker
@@ -3130,14 +3164,14 @@ class DamageCalculator:
 
     # Mummy: When the Pokémon is hit by a contact move, the attacker's ability becomes Mummy. Returns the attacker's abilities after.
     def mummy_ability_attacker(self):
-        if "mummy" not in self.attacker_abilities or not self.contact_move():
+        if "mummy" not in self.attacker_abilities or not self.contact_move() or self.ability_shield_item_defender():
             return self.defender_abilities
         for ability in self.defender_abilities:
             if ability in CANT_SUPPRESS_ABILITIES or ability == "mummy":
                 return self.defender_abilities
         return ["mummy"]
     def mummy_ability_defender(self):
-        if "mummy" not in self.defender_abilities or not self.contact_move():
+        if "mummy" not in self.defender_abilities or not self.contact_move() or self.ability_shield_item_attacker():
             return self.attacker_abilities
         for ability in self.attacker_abilities:
             if ability in CANT_SUPPRESS_ABILITIES or ability == "mummy":
@@ -3289,21 +3323,21 @@ class DamageCalculator:
 
     # Turboblaze: Same as Mold Breaker. The Pokémon's moves ignore abilities that would block or weaken them. Returns the target's abilities that still work.
     def turboblaze_ability_attacker(self):
-        if "turboblaze" not in self.attacker_abilities:
+        if "turboblaze" not in self.attacker_abilities or self.ability_shield_item_defender():
             return self.defender_abilities
         return [ability for ability in self.defender_abilities if ability not in BREAKABLE_ABILITIES]
     def turboblaze_ability_defender(self):
-        if "turboblaze" not in self.defender_abilities:
+        if "turboblaze" not in self.defender_abilities or self.ability_shield_item_attacker():
             return self.attacker_abilities
         return [ability for ability in self.attacker_abilities if ability not in BREAKABLE_ABILITIES]
 
     # Teravolt: Same as Mold Breaker. The Pokémon's moves ignore abilities that would block or weaken them. Returns the target's abilities that still work.
     def teravolt_ability_attacker(self):
-        if "teravolt" not in self.attacker_abilities:
+        if "teravolt" not in self.attacker_abilities or self.ability_shield_item_defender():
             return self.defender_abilities
         return [ability for ability in self.defender_abilities if ability not in BREAKABLE_ABILITIES]
     def teravolt_ability_defender(self):
-        if "teravolt" not in self.defender_abilities:
+        if "teravolt" not in self.defender_abilities or self.ability_shield_item_attacker():
             return self.attacker_abilities
         return [ability for ability in self.attacker_abilities if ability not in BREAKABLE_ABILITIES]
 
@@ -4545,14 +4579,14 @@ class DamageCalculator:
 
     # Wandering Spirit: When the Pokémon is hit by a contact move, it swaps abilities with the attacker. Returns its abilities and the attacker's abilities after.
     def wandering_spirit_ability_attacker(self):
-        if "wandering-spirit" not in self.attacker_abilities or not self.contact_move() or self.type_effectiveness_attacker() == 0:
+        if "wandering-spirit" not in self.attacker_abilities or not self.contact_move() or self.type_effectiveness_attacker() == 0 or self.ability_shield_item_defender():
             return self.attacker_abilities, self.defender_abilities
         for ability in self.defender_abilities:
             if ability in SKILL_SWAP_BANNED_ABILITIES:
                 return self.attacker_abilities, self.defender_abilities
         return self.defender_abilities, self.attacker_abilities
     def wandering_spirit_ability_defender(self):
-        if "wandering-spirit" not in self.defender_abilities or not self.contact_move() or self.type_effectiveness_defender() == 0:
+        if "wandering-spirit" not in self.defender_abilities or not self.contact_move() or self.type_effectiveness_defender() == 0 or self.ability_shield_item_attacker():
             return self.defender_abilities, self.attacker_abilities
         for ability in self.attacker_abilities:
             if ability in SKILL_SWAP_BANNED_ABILITIES:
@@ -4572,14 +4606,13 @@ class DamageCalculator:
 
     # Neutralizing Gas: While the Pokémon is out, the other Pokémon's abilities don't work. Returns the other Pokémon's abilities that still work.
     def neutralizing_gas_ability_attacker(self):
-        if "neutralizing-gas" not in self.attacker_abilities:
+        if "neutralizing-gas" not in self.attacker_abilities or self.ability_shield_item_defender():
             return self.defender_abilities
         return [ability for ability in self.defender_abilities if ability in CANT_SUPPRESS_ABILITIES or ability == "neutralizing-gas"]
     def neutralizing_gas_ability_defender(self):
-        if "neutralizing-gas" not in self.defender_abilities:
+        if "neutralizing-gas" not in self.defender_abilities or self.ability_shield_item_attacker():
             return self.attacker_abilities
         return [ability for ability in self.attacker_abilities if ability in CANT_SUPPRESS_ABILITIES or ability == "neutralizing-gas"]
-        # Will add Ability Shield later with the items.
 
     # Pastel Veil: The Pokémon and its allies can't be poisoned. Returns the status that actually sticks.
     def pastel_veil_ability_attacker(self):
@@ -4750,14 +4783,14 @@ class DamageCalculator:
 
     # Lingering Aroma: Same as Mummy. When the Pokémon is hit by a contact move, the attacker's ability becomes Lingering Aroma. Returns the attacker's abilities after.
     def lingering_aroma_ability_attacker(self):
-        if "lingering-aroma" not in self.attacker_abilities or not self.contact_move():
+        if "lingering-aroma" not in self.attacker_abilities or not self.contact_move() or self.ability_shield_item_defender():
             return self.defender_abilities
         for ability in self.defender_abilities:
             if ability in CANT_SUPPRESS_ABILITIES or ability == "lingering-aroma":
                 return self.defender_abilities
         return ["lingering-aroma"]
     def lingering_aroma_ability_defender(self):
-        if "lingering-aroma" not in self.defender_abilities or not self.contact_move():
+        if "lingering-aroma" not in self.defender_abilities or not self.contact_move() or self.ability_shield_item_attacker():
             return self.attacker_abilities
         for ability in self.attacker_abilities:
             if ability in CANT_SUPPRESS_ABILITIES or ability == "lingering-aroma":
@@ -5062,13 +5095,13 @@ class DamageCalculator:
     def orichalcum_pulse_attack_attacker(self):
         if "orichalcum-pulse" not in self.attacker_abilities:
             return self.attacker.stats["attack"]
-        if self.current_weather() in ("sun", "extreme-sun"):
+        if self.utility_umbrella_item_attacker() in ("sun", "extreme-sun"):
             return self.attacker.stats["attack"] * 1.33
         return self.attacker.stats["attack"]
     def orichalcum_pulse_attack_defender(self):
         if "orichalcum-pulse" not in self.defender_abilities:
             return self.defender.stats["attack"]
-        if self.current_weather() in ("sun", "extreme-sun"):
+        if self.utility_umbrella_item_defender() in ("sun", "extreme-sun"):
             return self.defender.stats["attack"] * 1.33
         return self.defender.stats["attack"]
 
@@ -5209,11 +5242,11 @@ class DamageCalculator:
 
     # Mycelium Might: The Pokémon's status moves ignore the target's ability. Returns the target's abilities that still work.
     def mycelium_might_abilities_attacker(self):
-        if "mycelium-might" not in self.attacker_abilities or not self.status_move():
+        if "mycelium-might" not in self.attacker_abilities or not self.status_move() or self.ability_shield_item_defender():
             return self.defender_abilities
         return [ability for ability in self.defender_abilities if ability not in BREAKABLE_ABILITIES]
     def mycelium_might_abilities_defender(self):
-        if "mycelium-might" not in self.defender_abilities or not self.status_move():
+        if "mycelium-might" not in self.defender_abilities or not self.status_move() or self.ability_shield_item_attacker():
             return self.attacker_abilities
         return [ability for ability in self.attacker_abilities if ability not in BREAKABLE_ABILITIES]
 
@@ -5313,7 +5346,7 @@ class DamageCalculator:
     def toxic_chain_ability_attacker(self):
         if "toxic-chain" not in self.attacker_abilities or self.status_move():
             return self.status_defender
-        if "shield-dust" in self.defender_abilities or self.type_effectiveness_defender() == 0:
+        if "shield-dust" in self.defender_abilities or self.held_item_defender() == "covert-cloak" or self.type_effectiveness_defender() == 0:
             return self.status_defender
         if self.status_effects_defender() or self.status_immune_defender("badly-poison"):
             return self.status_defender
@@ -5323,7 +5356,7 @@ class DamageCalculator:
     def toxic_chain_ability_defender(self):
         if "toxic-chain" not in self.defender_abilities or self.status_move():
             return self.status_attacker
-        if "shield-dust" in self.attacker_abilities or self.type_effectiveness_attacker() == 0:
+        if "shield-dust" in self.attacker_abilities or self.held_item_attacker() == "covert-cloak" or self.type_effectiveness_attacker() == 0:
             return self.status_attacker
         if self.status_effects_attacker() or self.status_immune_attacker("badly-poison"):
             return self.status_attacker
@@ -5564,15 +5597,15 @@ class DamageCalculator:
             return 0
         return min(20, max_hp - current_hp)
 
-    # Griseous Orb: Boosts the power of Giratina's Ghost and Dragon-type moves by 20%.
+    # Griseous Orb and Griseous Core: Boost the power of Giratina's Ghost and Dragon-type moves by 20%.
     def griseous_orb_item_attacker(self):
-        if self.held_item_attacker() != "griseous-orb" or self.attacker.pokedex_id != 487 or not self.move_power:
+        if self.held_item_attacker() not in ("griseous-orb", "griseous-core") or self.attacker.pokedex_id != 487 or not self.move_power:
             return self.move_power
         if self.move_type in ("ghost", "dragon"):
             return self.move_power * 1.2
         return self.move_power
     def griseous_orb_item_defender(self):
-        if self.held_item_defender() != "griseous-orb" or self.defender.pokedex_id != 487 or not self.move_power:
+        if self.held_item_defender() not in ("griseous-orb", "griseous-core") or self.defender.pokedex_id != 487 or not self.move_power:
             return self.move_power
         if self.move_type in ("ghost", "dragon"):
             return self.move_power * 1.2
@@ -5618,29 +5651,29 @@ class DamageCalculator:
             return self.move_type
         return "ice"
 
-    # Adamant Orb: Boosts the power of Dialga's Steel and Dragon-type moves by 20%.
+    # Adamant Orb and Adamant Crystal: Boost the power of Dialga's Steel and Dragon-type moves by 20%.
     def adamant_orb_item_attacker(self):
-        if self.held_item_attacker() != "adamant-orb" or self.attacker.pokedex_id != 483 or not self.move_power:
+        if self.held_item_attacker() not in ("adamant-orb", "adamant-crystal") or self.attacker.pokedex_id != 483 or not self.move_power:
             return self.move_power
         if self.move_type in ("steel", "dragon"):
             return self.move_power * 1.2
         return self.move_power
     def adamant_orb_item_defender(self):
-        if self.held_item_defender() != "adamant-orb" or self.defender.pokedex_id != 483 or not self.move_power:
+        if self.held_item_defender() not in ("adamant-orb", "adamant-crystal") or self.defender.pokedex_id != 483 or not self.move_power:
             return self.move_power
         if self.move_type in ("steel", "dragon"):
             return self.move_power * 1.2
         return self.move_power
 
-    # Lustrous Orb: Boosts the power of Palkia's Water and Dragon-type moves by 20%.
+    # Lustrous Orb and Lustrous Globe: Boost the power of Palkia's Water and Dragon-type moves by 20%.
     def lustrous_orb_item_attacker(self):
-        if self.held_item_attacker() != "lustrous-orb" or self.attacker.pokedex_id != 484 or not self.move_power:
+        if self.held_item_attacker() not in ("lustrous-orb", "lustrous-globe") or self.attacker.pokedex_id != 484 or not self.move_power:
             return self.move_power
         if self.move_type in ("water", "dragon"):
             return self.move_power * 1.2
         return self.move_power
     def lustrous_orb_item_defender(self):
-        if self.held_item_defender() != "lustrous-orb" or self.defender.pokedex_id != 484 or not self.move_power:
+        if self.held_item_defender() not in ("lustrous-orb", "lustrous-globe") or self.defender.pokedex_id != 484 or not self.move_power:
             return self.move_power
         if self.move_type in ("water", "dragon"):
             return self.move_power * 1.2
@@ -6240,17 +6273,17 @@ class DamageCalculator:
     def power_herb_item_attacker(self):
         if self.held_item_attacker() != "power-herb" or self.move_name not in CHARGE_MOVES:
             return False
-        if self.move_name in ("solar-beam", "solar-blade") and self.current_weather() in ("sun", "extreme-sun"):
+        if self.move_name in ("solar-beam", "solar-blade") and self.utility_umbrella_item_attacker() in ("sun", "extreme-sun"):
             return False
-        if self.move_name == "electro-shot" and self.current_weather() in ("rain", "heavy-rain"):
+        if self.move_name == "electro-shot" and self.utility_umbrella_item_attacker() in ("rain", "heavy-rain"):
             return False
         return True
     def power_herb_item_defender(self):
         if self.held_item_defender() != "power-herb" or self.move_name not in CHARGE_MOVES:
             return False
-        if self.move_name in ("solar-beam", "solar-blade") and self.current_weather() in ("sun", "extreme-sun"):
+        if self.move_name in ("solar-beam", "solar-blade") and self.utility_umbrella_item_defender() in ("sun", "extreme-sun"):
             return False
-        if self.move_name == "electro-shot" and self.current_weather() in ("rain", "heavy-rain"):
+        if self.move_name == "electro-shot" and self.utility_umbrella_item_defender() in ("rain", "heavy-rain"):
             return False
         return True
 
@@ -6642,3 +6675,328 @@ class DamageCalculator:
         if item not in GEM_TYPES or not self.move_power or self.move_type != GEM_TYPES[item]:
             return self.move_power
         return self.move_power * 1.3
+
+    # Weakness Policy: When the Pokémon is hit by a super-effective move, its Attack and Sp. Atk go up 2 stages and it's used up. Returns the Attack and Sp. Atk stage changes.
+    def weakness_policy_item_attacker(self):
+        if self.held_item_attacker() != "weakness-policy" or self.status_move() or self.move_name in FIXED_DAMAGE_MOVES:
+            return 0, 0
+        if self.type_effectiveness_attacker() <= 1:
+            return 0, 0
+        return 2, 2
+    def weakness_policy_item_defender(self):
+        if self.held_item_defender() != "weakness-policy" or self.status_move() or self.move_name in FIXED_DAMAGE_MOVES:
+            return 0, 0
+        if self.type_effectiveness_defender() <= 1:
+            return 0, 0
+        return 2, 2
+
+    # Assault Vest: Boosts the Pokémon's Sp. Def by 50%, but it can't use status moves.
+    def assault_vest_item_attacker(self):
+        if self.held_item_attacker() != "assault-vest":
+            return self.attacker.stats["special-defense"]
+        return self.attacker.stats["special-defense"] * 1.5
+    def assault_vest_item_defender(self):
+        if self.held_item_defender() != "assault-vest":
+            return self.defender.stats["special-defense"]
+        return self.defender.stats["special-defense"] * 1.5
+
+    # Returns True if the Pokémon can use this move while holding Assault Vest. Me First still works.
+    def assault_vest_move_item_attacker(self):
+        if self.held_item_attacker() != "assault-vest":
+            return True
+        return not self.status_move() or self.move_name == "me-first"
+    def assault_vest_move_item_defender(self):
+        if self.held_item_defender() != "assault-vest":
+            return True
+        return not self.status_move() or self.move_name == "me-first"
+
+    # Luminous Moss: When the Pokémon is hit by a Water-type move, its Sp. Def goes up 1 stage and the moss is used up. Returns the Sp. Def stage change.
+    def luminous_moss_item_attacker(self):
+        if self.held_item_attacker() != "luminous-moss" or self.move_type != "water" or self.status_move():
+            return 0
+        if self.type_effectiveness_attacker() == 0:
+            return 0
+        return 1
+    def luminous_moss_item_defender(self):
+        if self.held_item_defender() != "luminous-moss" or self.move_type != "water" or self.status_move():
+            return 0
+        if self.type_effectiveness_defender() == 0:
+            return 0
+        return 1
+
+    # Snowball: When the Pokémon is hit by an Ice-type move, its Attack goes up 1 stage and the snowball is used up. Returns the Attack stage change.
+    def snowball_item_attacker(self):
+        if self.held_item_attacker() != "snowball" or self.move_type != "ice" or self.status_move():
+            return 0
+        if self.type_effectiveness_attacker() == 0:
+            return 0
+        return 1
+    def snowball_item_defender(self):
+        if self.held_item_defender() != "snowball" or self.move_type != "ice" or self.status_move():
+            return 0
+        if self.type_effectiveness_defender() == 0:
+            return 0
+        return 1
+
+    # Safety Goggles: The Pokémon is immune to powder and spore moves. Returns True if the move is blocked.
+    # Safety Goggles also block Effect Spore and sandstorm and hail dmg (handled in effect_spore_ability and weather_damage).
+    def safety_goggles_item_attacker(self):
+        if self.held_item_attacker() != "safety-goggles":
+            return False
+        return self.powder_and_spore_move() and self.move_name != "rage-powder"
+    def safety_goggles_item_defender(self):
+        if self.held_item_defender() != "safety-goggles":
+            return False
+        return self.powder_and_spore_move() and self.move_name != "rage-powder"
+
+    # Kee Berry: When the Pokémon is hit by a physical move, it eats the Berry and its Defense goes up 1 stage. Returns the Defense stage change.
+    def kee_berry_item_attacker(self):
+        if self.held_berry_attacker() != "kee-berry" or self.move_data.damage_class != "physical" or self.type_effectiveness_attacker() == 0:
+            return 0
+        return self.ripen_ability_attacker(1)
+    def kee_berry_item_defender(self):
+        if self.held_berry_defender() != "kee-berry" or self.move_data.damage_class != "physical" or self.type_effectiveness_defender() == 0:
+            return 0
+        return self.ripen_ability_defender(1)
+
+    # Maranga Berry: When the Pokémon is hit by a special move, it eats the Berry and its Sp. Def goes up 1 stage. Returns the Sp. Def stage change.
+    def maranga_berry_item_attacker(self):
+        if self.held_berry_attacker() != "maranga-berry" or self.move_data.damage_class != "special" or self.type_effectiveness_attacker() == 0:
+            return 0
+        return self.ripen_ability_attacker(1)
+    def maranga_berry_item_defender(self):
+        if self.held_berry_defender() != "maranga-berry" or self.move_data.damage_class != "special" or self.type_effectiveness_defender() == 0:
+            return 0
+        return self.ripen_ability_defender(1)
+
+    # Adrenaline Orb: When the Pokémon is hit by Intimidate, its Speed goes up 1 stage and the orb is used up. Returns the Speed stage change.
+    # incoming_effect = the effect the Pokémon just got. speed_stage = its current Speed stage.
+    def adrenaline_orb_item_attacker(self, incoming_effect, speed_stage=0):
+        if self.held_item_attacker() != "adrenaline-orb" or incoming_effect != "intimidate" or speed_stage >= 6:
+            return 0
+        return 1
+    def adrenaline_orb_item_defender(self, incoming_effect, speed_stage=0):
+        if self.held_item_defender() != "adrenaline-orb" or incoming_effect != "intimidate" or speed_stage >= 6:
+            return 0
+        return 1
+
+    # Terrain Seeds (Electric Seed, Grassy Seed, etc.): When the matching terrain is up, the Pokémon's Defense or Sp. Def goes up 1 stage and the seed is used up. Returns the stat and the stage change.
+    def terrain_seed_item_attacker(self):
+        item = self.held_item_attacker()
+        if item not in TERRAIN_SEEDS or self.terrain != TERRAIN_SEEDS[item][0]:
+            return None, 0
+        return TERRAIN_SEEDS[item][1], 1
+    def terrain_seed_item_defender(self):
+        item = self.held_item_defender()
+        if item not in TERRAIN_SEEDS or self.terrain != TERRAIN_SEEDS[item][0]:
+            return None, 0
+        return TERRAIN_SEEDS[item][1], 1
+
+    # Memories (Fire Memory, Water Memory, etc.): Silvally's Multi-Attack becomes the Memory's type. Silvally's own type change is in rks_system_ability. Returns the move's type.
+    def memory_item_attacker(self):
+        item = self.held_item_attacker()
+        if item not in MEMORY_TYPES or self.move_name != "multi-attack":
+            return self.move_type
+        return MEMORY_TYPES[item]
+    def memory_item_defender(self):
+        item = self.held_item_defender()
+        if item not in MEMORY_TYPES or self.move_name != "multi-attack":
+            return self.move_type
+        return MEMORY_TYPES[item]
+
+    # Throat Spray: After the Pokémon uses a sound move, its Sp. Atk goes up 1 stage and the spray is used up. Returns the Sp. Atk stage change.
+    def throat_spray_item_attacker(self):
+        if self.held_item_attacker() != "throat-spray" or not self.sound_move() or self.sheer_force_effects_attacker():
+            return 0
+        if "soundproof" in self.defender_abilities:
+            return 0
+        return 1
+    def throat_spray_item_defender(self):
+        if self.held_item_defender() != "throat-spray" or not self.sound_move() or self.sheer_force_effects_defender():
+            return 0
+        if "soundproof" in self.attacker_abilities:
+            return 0
+        return 1
+
+    # Eject Pack: When the Pokémon's stats are lowered, it switches out and the pack is used up. Parting Shot doesn't trigger it. Returns True if it switches out.
+    # stat_changes = the stat changes the Pokémon just got.
+    def eject_pack_item_attacker(self, stat_changes):
+        if self.held_item_attacker() != "eject-pack" or self.move_name == "parting-shot":
+            return False
+        return any(change < 0 for change in stat_changes.values())
+    def eject_pack_item_defender(self, stat_changes):
+        if self.held_item_defender() != "eject-pack" or self.move_name == "parting-shot":
+            return False
+        return any(change < 0 for change in stat_changes.values())
+
+    # Room Service: When Trick Room is set, the Pokémon's Speed goes down 1 stage and it's used up. Returns the Speed stage change.
+    # trick_room = True if Trick Room is up.
+    def room_service_item_attacker(self, trick_room):
+        if self.held_item_attacker() != "room-service" or not trick_room:
+            return 0
+        return -1
+    def room_service_item_defender(self, trick_room):
+        if self.held_item_defender() != "room-service" or not trick_room:
+            return 0
+        return -1
+
+    # Utility Umbrella: The Pokémon isn't affected by sun or rain. Returns the weather the Pokémon is affected by.
+    def utility_umbrella_item_attacker(self):
+        weather = self.current_weather()
+        if self.held_item_attacker() == "utility-umbrella" and weather in ("sun", "extreme-sun", "rain", "heavy-rain"):
+            return None
+        return weather
+    def utility_umbrella_item_defender(self):
+        weather = self.current_weather()
+        if self.held_item_defender() == "utility-umbrella" and weather in ("sun", "extreme-sun", "rain", "heavy-rain"):
+            return None
+        return weather
+
+    # Adamant Crystal, Lustrous Globe and Griseous Core: Dialga, Palkia and Giratina change to their Origin Forme while holding them. Giratina's ability becomes Levitate. Returns its form name, types, stats and ability.
+    # Their power boost is in adamant_orb_item, lustrous_orb_item and griseous_orb_item.
+    def origin_forme_item_attacker(self):
+        item = self.held_item_attacker()
+        if item not in ORIGIN_FORME_ITEMS or self.attacker.pokedex_id != ORIGIN_FORME_ITEMS[item][0]:
+            return self.attacker.name, self.attacker.types, self.attacker.stats, self.attacker_abilities[0]
+        form_name = ORIGIN_FORME_ITEMS[item][1]
+        form = BATTLE_FORMS[form_name]
+        if form_name == "giratina-origin":
+            return form_name, form["types"], form["stats"], "levitate"
+        return form_name, form["types"], form["stats"], self.attacker_abilities[0]
+    def origin_forme_item_defender(self):
+        item = self.held_item_defender()
+        if item not in ORIGIN_FORME_ITEMS or self.defender.pokedex_id != ORIGIN_FORME_ITEMS[item][0]:
+            return self.defender.name, self.defender.types, self.defender.stats, self.defender_abilities[0]
+        form_name = ORIGIN_FORME_ITEMS[item][1]
+        form = BATTLE_FORMS[form_name]
+        if form_name == "giratina-origin":
+            return form_name, form["types"], form["stats"], "levitate"
+        return form_name, form["types"], form["stats"], self.defender_abilities[0]
+
+    # Booster Energy: Activates Protosynthesis without sun or Quark Drive without Electric Terrain, then it's used up. Returns True if it's used.
+    # Pass this into protosynthesis_ability / quark_drive_ability as booster_energy.
+    def booster_energy_item_attacker(self):
+        if self.held_item_attacker() != "booster-energy":
+            return False
+        if "protosynthesis" in self.attacker_abilities and self.current_weather() != "sun":
+            return True
+        return "quark-drive" in self.attacker_abilities and self.terrain != "electric-terrain"
+    def booster_energy_item_defender(self):
+        if self.held_item_defender() != "booster-energy":
+            return False
+        if "protosynthesis" in self.defender_abilities and self.current_weather() != "sun":
+            return True
+        return "quark-drive" in self.defender_abilities and self.terrain != "electric-terrain"
+
+    # Ability Shield: The Pokémon's ability can't be changed or ignored by other Pokémon (Mold Breaker, Neutralizing Gas, Mummy, etc.). It still works with Klutz. Returns True if the ability is protected.
+    def ability_shield_item_attacker(self):
+        return self.held_item_attacker() == "ability-shield"
+    def ability_shield_item_defender(self):
+        return self.held_item_defender() == "ability-shield"
+
+    # Clear Amulet: Other Pokémon's moves and abilities can't lower this Pokémon's stats. It also blocks Intimidate.
+    # stage_change = how many stages the stat is changing. Returns the stage change that actually happens.
+    def clear_amulet_item_attacker(self, stage_change, from_opponent=True):
+        if self.held_item_attacker() != "clear-amulet":
+            return stage_change
+        if stage_change < 0 and from_opponent:
+            return 0
+        return stage_change
+    def clear_amulet_item_defender(self, stage_change, from_opponent=True):
+        if self.held_item_defender() != "clear-amulet":
+            return stage_change
+        if stage_change < 0 and from_opponent:
+            return 0
+        return stage_change
+
+    # Mirror Herb: When the other Pokémon's stats go up, the Pokémon copies the boosts and the herb is used up. Returns the stat changes it copies.
+    # opponent_stat_changes = the stat changes the other Pokémon just got.
+    def mirror_herb_item_attacker(self, opponent_stat_changes):
+        if self.held_item_attacker() != "mirror-herb":
+            return {}
+        return {stat: change for stat, change in opponent_stat_changes.items() if change > 0}
+    def mirror_herb_item_defender(self, opponent_stat_changes):
+        if self.held_item_defender() != "mirror-herb":
+            return {}
+        return {stat: change for stat, change in opponent_stat_changes.items() if change > 0}
+
+    # Punching Glove: Boosts the power of the Pokémon's punching moves by 10%, and they don't make contact. Returns the move's power and True if it makes contact.
+    def punching_glove_item_attacker(self):
+        if self.held_item_attacker() != "punching-glove" or self.move_name not in PUNCHING_MOVES:
+            return self.move_power, self.contact_move()
+        if not self.move_power:
+            return self.move_power, False
+        return self.move_power * 1.1, False
+    def punching_glove_item_defender(self):
+        if self.held_item_defender() != "punching-glove" or self.move_name not in PUNCHING_MOVES:
+            return self.move_power, self.contact_move()
+        if not self.move_power:
+            return self.move_power, False
+        return self.move_power * 1.1, False
+
+    # Covert Cloak: The Pokémon isn't affected by the extra effects of moves (flinching, stat drops, status, etc.). It also blocks Poison Touch and Toxic Chain.
+    # Returns (ailment_chance, flinch_chance) as decimals, so roll them with: random.random() < chance
+    def covert_cloak_item_attacker(self):
+        ailment_chance, flinch_chance, _ = self.serene_grace_ability_defender()
+        if self.held_item_attacker() != "covert-cloak" or self.status_move():
+            return ailment_chance, flinch_chance
+        return 0, 0
+    def covert_cloak_item_defender(self):
+        ailment_chance, flinch_chance, _ = self.serene_grace_ability_attacker()
+        if self.held_item_defender() != "covert-cloak" or self.status_move():
+            return ailment_chance, flinch_chance
+        return 0, 0
+
+    # Loaded Dice: The Pokémon's multi-hit moves hit more times. 2-5 hit moves hit 4 or 5 times and Population Bomb hits 4-10 times. Returns how many times the move hits.
+    def loaded_dice_item_attacker(self):
+        if self.held_item_attacker() != "loaded-dice" or "skill-link" in self.attacker_abilities:
+            return self.skill_link_ability_attacker()
+        if self.move_name == "population-bomb":
+            return random.randint(4, 10)
+        if self.move_data.meta is not None and self.move_data.meta.get("min_hits") == 2 and self.move_data.meta.get("max_hits") == 5:
+            return random.choice((4, 5))
+        return self.skill_link_ability_attacker()
+    def loaded_dice_item_defender(self):
+        if self.held_item_defender() != "loaded-dice" or "skill-link" in self.defender_abilities:
+            return self.skill_link_ability_defender()
+        if self.move_name == "population-bomb":
+            return random.randint(4, 10)
+        if self.move_data.meta is not None and self.move_data.meta.get("min_hits") == 2 and self.move_data.meta.get("max_hits") == 5:
+            return random.choice((4, 5))
+        return self.skill_link_ability_defender()
+
+    # Masks (Wellspring Mask, Hearthflame Mask, Cornerstone Mask): Boost the power of Ogerpon's moves by 20%.
+    def ogerpon_mask_item_attacker(self):
+        if self.held_item_attacker() not in OGERPON_MASKS or self.attacker.pokedex_id != 1017 or not self.move_power:
+            return self.move_power
+        return self.move_power * 1.2
+    def ogerpon_mask_item_defender(self):
+        if self.held_item_defender() not in OGERPON_MASKS or self.defender.pokedex_id != 1017 or not self.move_power:
+            return self.move_power
+        return self.move_power * 1.2
+
+    # Masks also change Ogerpon's form, type and ability. Returns its form name, types, stats and ability.
+    def ogerpon_mask_form_item_attacker(self):
+        item = self.held_item_attacker()
+        if item not in OGERPON_MASKS or self.attacker.pokedex_id != 1017:
+            return self.attacker.name, self.attacker.types, self.attacker.stats, self.attacker_abilities[0]
+        mask_type, ability = OGERPON_MASKS[item]
+        return "ogerpon-" + item, ["grass", mask_type], self.attacker.stats, ability
+    def ogerpon_mask_form_item_defender(self):
+        item = self.held_item_defender()
+        if item not in OGERPON_MASKS or self.defender.pokedex_id != 1017:
+            return self.defender.name, self.defender.types, self.defender.stats, self.defender_abilities[0]
+        mask_type, ability = OGERPON_MASKS[item]
+        return "ogerpon-" + item, ["grass", mask_type], self.defender.stats, ability
+
+    # Ivy Cudgel becomes the type of Ogerpon's mask. Returns the move's type.
+    def ivy_cudgel_item_attacker(self):
+        item = self.held_item_attacker()
+        if item not in OGERPON_MASKS or self.move_name != "ivy-cudgel":
+            return self.move_type
+        return OGERPON_MASKS[item][0]
+    def ivy_cudgel_item_defender(self):
+        item = self.held_item_defender()
+        if item not in OGERPON_MASKS or self.move_name != "ivy-cudgel":
+            return self.move_type
+        return OGERPON_MASKS[item][0]
