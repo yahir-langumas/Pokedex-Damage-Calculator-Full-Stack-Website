@@ -48,3 +48,18 @@ class AbilityTests(TestCase):
     # Technician boosts moves with 60 power or less.
     def test_technician(self):
         self.assertEqual(make_calc("scizor", "snorlax", "bullet-punch", attacker_ability="technician").technician_ability_attacker(), 60)
+        
+class ItemTests(TestCase):
+    fixtures = ["pokedata"]
+ 
+    # Oran Berry heals 10 HP at half HP or less.
+    def test_oran_berry(self):
+        self.assertEqual(make_calc("snorlax", "machamp", "tackle", attacker_item="oran-berry").oran_berry_item_attacker(40, 100), 10)
+ 
+    # Klutz stops the Pokémon from using its item.
+    def test_klutz(self):
+        self.assertIsNone(make_calc("lopunny", "machamp", "tackle", attacker_ability="klutz", attacker_item="oran-berry").held_item_attacker())
+ 
+    # Unnerve stops the other Pokémon from eating Berries.
+    def test_unnerve(self):
+        self.assertIsNone(make_calc("snorlax", "mewtwo", "tackle", defender_ability="unnerve", attacker_item="oran-berry").held_berry_attacker())
