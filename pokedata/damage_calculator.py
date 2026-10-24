@@ -7237,4 +7237,45 @@ class DamageCalculator:
         if self.move_name in ABILITY_IGNORING_MOVES and not self.ability_shield_item_defender():
             self.defender_abilities = [ability for ability in self.defender_abilities if ability not in BREAKABLE_ABILITIES] or [""]
 
-  
+         # Works out the move's type after items, abilities and the field change it. Returns the type and True if an -ate ability or Normalize changed it (those also boost its power by 20%).
+    def final_move_type(self):
+        name = self.move_name
+        if name == "weather-ball":
+            weather = self.utility_umbrella_item_attacker()
+            if "mega-sol" in self.attacker_abilities and self.held_item_attacker() != "utility-umbrella":
+                weather = "sun"
+            weather_types = {"sun": "fire", "extreme-sun": "fire", "rain": "water", "heavy-rain": "water", "sandstorm": "rock", "snow": "ice", "hail": "ice"}
+            return weather_types.get(weather, "normal"), False
+        if name == "judgment" and self.held_item_attacker() in PLATE_TYPES:
+            return PLATE_TYPES[self.held_item_attacker()], False
+        if name == "techno-blast":
+            for drive in (self.douse_drive_item_attacker, self.shock_drive_item_attacker, self.burn_drive_item_attacker, self.chill_drive_item_attacker):
+                if drive() != self.move_type:
+                    return drive(), False
+            return self.move_type, False
+        if name == "multi-attack":
+            return self.memory_item_attacker(), False
+        if name == "ivy-cudgel":
+            return self.ivy_cudgel_item_attacker(), False
+        if name == "terrain-pulse":
+            terrain_types = {"electric-terrain": "electric", "grassy-terrain": "grass", "misty-terrain": "fairy", "psychic-terrain": "psychic"}
+            if self.grounded_attacker():
+                return terrain_types.get(self.terrain, "normal"), False
+            return "normal", False
+        if name == "revelation-dance":
+            return self.attacker.types[0], False
+        if name == "hidden-power":
+            ivs = self.attacker_build["ivs"]
+            bits = sum((ivs[stat] % 2) << place for place, stat in enumerate(("hp", "attack", "defense", "speed", "special-attack", "special-defense")))
+            return HIDDEN_POWER_TYPES[bits * 15 // 63], False
+        if name == "struggle":
+            return "typeless", False
+        move_type, new_power = self.normalize_ability_attacker()
+        if new_power != self.move_power:
+            return move_type, True
+        for ate_ability in (self.aerilate_ability_attacker, self.galvanize_ability_attacker, self.pixilate_ability_attacker, self.refrigerate_ability_attacker, self.dragonize_ability_attacker):
+            move_type, _ = ate_ability()
+            if move_type != self.move_type:
+                return move_type, True
+        return self.liquid_voice_ability_attacker(), False
+    
