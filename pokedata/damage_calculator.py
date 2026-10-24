@@ -3,6 +3,7 @@ from pokedata.models import Species
 from pokedata.models import Moves
 from pokedata.models import Learnset
 from pokedata.models import Type
+from pokedata.stats import NATURES, calculate_stats, make_build
 import random
 
 # Hard coding moves and abilities that have special properties that effect damage calculations and interactions with other moves and abilities.
@@ -370,6 +371,7 @@ TARGETED_STATUS_MOVES = {
 }
 
 # Forms some Pokémon change into during battle. The database only has the default forms, so these are hard coded.
+# These are base stats. Run them through calculate_stats to get the real stats.
 BATTLE_FORMS = {
     "darmanitan-zen": {"types": ["fire", "psychic"], "stats": {"hp": 105, "attack": 30, "defense": 105, "special-attack": 140, "special-defense": 105, "speed": 55}},
     "aegislash-blade": {"types": ["steel", "ghost"], "stats": {"hp": 60, "attack": 140, "defense": 50, "special-attack": 140, "special-defense": 50, "speed": 60}},
@@ -442,15 +444,6 @@ MIMICRY_TYPES = {
 # The stat Embody Aspect raises for each of Ogerpon's masks. No mask (Teal) raises Speed.
 EMBODY_ASPECT_STATS = {
     "teal-mask": "speed", "wellspring-mask": "special-defense", "hearthflame-mask": "attack", "cornerstone-mask": "defense",
-}
-
-# Each nature's raised and lowered stat. Neutral natures don't change any stats.
-NATURES = {
-    "hardy": (None, None), "lonely": ("attack", "defense"), "brave": ("attack", "speed"), "adamant": ("attack", "special-attack"), "naughty": ("attack", "special-defense"),
-    "bold": ("defense", "attack"), "docile": (None, None), "relaxed": ("defense", "speed"), "impish": ("defense", "special-attack"), "lax": ("defense", "special-defense"),
-    "timid": ("speed", "attack"), "hasty": ("speed", "defense"), "serious": (None, None), "jolly": ("speed", "special-attack"), "naive": ("speed", "special-defense"),
-    "modest": ("special-attack", "attack"), "mild": ("special-attack", "defense"), "quiet": ("special-attack", "speed"), "bashful": (None, None), "rash": ("special-attack", "special-defense"),
-    "calm": ("special-defense", "attack"), "gentle": ("special-defense", "defense"), "sassy": ("special-defense", "speed"), "careful": ("special-defense", "special-attack"), "quirky": (None, None),
 }
 
 # Healing Berries that also confuse the Pokémon if its nature lowers this stat (it dislikes the flavor).
@@ -577,7 +570,8 @@ NOT_FULLY_EVOLVED = {
 class DamageCalculator:
     # attacker_ability and defender_ability = the ability each Pokémon is using. If it's not given, it uses the Pokémon's first ability.
     # attacker_item and defender_item = the item each Pokémon is holding. If it's not given, the Pokémon isn't holding anything.
-    def __init__(self, attacker: Species, defender: Species, move_type: str, move_power: int, move_name: str, status_effect_attacker: str, status_effect_defender: str, weather: str = None, terrain: str = None, attacker_ability: str = None, defender_ability: str = None, attacker_item: str = None, defender_item: str = None):
+    # attacker_build and defender_build = each Pokémon's level, EVs, IVs and nature. Anything not given uses level 50, 0 EVs, 31 IVs and a neutral nature.
+    def __init__(self, attacker: Species, defender: Species, move_type: str, move_power: int, move_name: str, status_effect_attacker: str, status_effect_defender: str, weather: str = None, terrain: str = None, attacker_ability: str = None, defender_ability: str = None, attacker_item: str = None, defender_item: str = None, attacker_build: dict = None, defender_build: dict = None):
         self.attacker = attacker
         self.defender = defender
         self.move_type = move_type
@@ -598,6 +592,13 @@ class DamageCalculator:
         self.defender_abilities = [defender_ability or self.defender.abilities[0]]
         self.attacker_item = attacker_item
         self.defender_item = defender_item
+        self.attacker_build = make_build(attacker_build)
+        self.defender_build = make_build(defender_build)
+        self.attacker_level = self.attacker_build["level"]
+        self.defender_level = self.defender_build["level"]
+        # Real stats from each Pokémon's base stats and build.
+        self.attacker_stats = calculate_stats(self.attacker.stats, self.attacker_build, self.attacker.pokedex_id)
+        self.defender_stats = calculate_stats(self.defender.stats, self.defender_build, self.defender.pokedex_id)
 
     def status_effects_attacker(self):
         return self.status_attacker in STATUS_EFFECTS
@@ -718,13 +719,13 @@ class DamageCalculator:
     def weather_stat_attacker(self, stat):
         effects = self.weather_effects()
         if effects.get("boosted_stat") == stat and effects.get("boosted_stat_type") in self.attacker.types:
-            return self.attacker.stats[stat] * effects["stat_multiplier"]
-        return self.attacker.stats[stat]
+            return self.attacker_stats[stat] * effects["stat_multiplier"]
+        return self.attacker_stats[stat]
     def weather_stat_defender(self, stat):
         effects = self.weather_effects()
         if effects.get("boosted_stat") == stat and effects.get("boosted_stat_type") in self.defender.types:
-            return self.defender.stats[stat] * effects["stat_multiplier"]
-        return self.defender.stats[stat]
+            return self.defender_stats[stat] * effects["stat_multiplier"]
+        return self.defender_stats[stat]
 
     # Grassy Terrain heals grounded Pokémon 1/16 of their max HP at the end of each turn.
     def terrain_heal_attacker(self):
@@ -856,93 +857,93 @@ class DamageCalculator:
     # Guts boosts the bearer's Attack stat by 50% when it has a major status condition.
     def guts_ability_attacker(self):
         if "guts" not in self.attacker_abilities:
-            return self.attacker.stats["attack"]
+            return self.attacker_stats["attack"]
         if self.status_effects_attacker():
-            return self.attacker.stats["attack"] * 1.5
+            return self.attacker_stats["attack"] * 1.5
         else:
-            return self.attacker.stats["attack"]
+            return self.attacker_stats["attack"]
     def guts_ability_defender(self):
         if "guts" not in self.defender_abilities:
-                return self.defender.stats["attack"]
+                return self.defender_stats["attack"]
         if self.status_effects_defender():
-            return self.defender.stats["attack"] * 1.5
+            return self.defender_stats["attack"] * 1.5
         else:
-            return self.defender.stats["attack"]
+            return self.defender_stats["attack"]
 
     # Toxic boost increases the Pokémon's physical Attack stat by 1.5× when it is poisoned
     def toxic_boost_ability_attacker(self):
         if "toxic-boost" not in self.attacker_abilities:
-            return self.attacker.stats["attack"]
+            return self.attacker_stats["attack"]
         if self.status_attacker == "poison" or self.status_attacker == "badly-poison":
-            return self.attacker.stats["attack"] * 1.5
+            return self.attacker_stats["attack"] * 1.5
         else:
-            return self.attacker.stats["attack"]
+            return self.attacker_stats["attack"]
     def toxic_boost_ability_defender(self):
         if "toxic-boost" not in self.defender_abilities:
-           return self.defender.stats["attack"]
+           return self.defender_stats["attack"]
         if self.status_defender == "poison" or self.status_defender == "badly-poison":
-            return self.defender.stats["attack"] * 1.5
+            return self.defender_stats["attack"] * 1.5
         else:
-            return self.defender.stats["attack"]
+            return self.defender_stats["attack"]
 
     # Flare boost multiplies the user's Special Attack stat by 1.5× when the Pokémon is burned
     def flare_boost_ability_attacker(self):
         if "flare-boost" not in self.attacker_abilities:
-            return self.attacker.stats["special-attack"]
+            return self.attacker_stats["special-attack"]
         if self.status_attacker == "burn":
-            return self.attacker.stats["special-attack"] * 1.5
+            return self.attacker_stats["special-attack"] * 1.5
         else:
-            return self.attacker.stats["special-attack"]
+            return self.attacker_stats["special-attack"]
     def flare_boost_ability_defender(self):
         if "flare-boost" not in self.defender_abilities:
-            return self.defender.stats["special-attack"]
+            return self.defender_stats["special-attack"]
         if self.status_defender == "burn":
-            return self.defender.stats["special-attack"] * 1.5
+            return self.defender_stats["special-attack"] * 1.5
         else:
-            return self.defender.stats["special-attack"]
+            return self.defender_stats["special-attack"]
 
     # Quick feet increases a Pokémon's Speed stat by 50% when it is affected by a major status ailment like poison, burn, paralysis, freeze, or sleep
     def quick_feet_ability_attacker(self):
         if "quick-feet" not in self.attacker_abilities:
-            return self.attacker.stats["speed"]
+            return self.attacker_stats["speed"]
         if self.status_effects_attacker():
-            return self.attacker.stats["speed"] * 1.5
+            return self.attacker_stats["speed"] * 1.5
         else:
-            return self.attacker.stats["speed"]
+            return self.attacker_stats["speed"]
     def quick_feet_ability_defender(self):
         if "quick-feet" not in self.defender_abilities:
-            return self.defender.stats["speed"]
+            return self.defender_stats["speed"]
         if self.status_effects_defender():
-            return self.defender.stats["speed"] * 1.5
+            return self.defender_stats["speed"] * 1.5
         else:
-            return self.defender.stats["speed"]
+            return self.defender_stats["speed"]
 
     # Marvel scale boosts the user's Defense stat by 50% (1.5×) whenever it is afflicted with a major status condition(poison, burn, paralysis, freeze, or sleep).
     def marvel_scale_ability_attacker(self):
         if "marvel-scale" not in self.attacker_abilities:
-            return self.attacker.stats["defense"]
+            return self.attacker_stats["defense"]
         if self.status_effects_attacker():
-            return self.attacker.stats["defense"] * 1.5
+            return self.attacker_stats["defense"] * 1.5
         else:
-            return self.attacker.stats["defense"]
+            return self.attacker_stats["defense"]
     def marvel_scale_ability_defender(self):
         if "marvel-scale" not in self.defender_abilities:
-            return self.defender.stats["defense"]
+            return self.defender_stats["defense"]
         if self.status_effects_defender():
-            return self.defender.stats["defense"] * 1.5
+            return self.defender_stats["defense"] * 1.5
         else:
-            return self.defender.stats["defense"]
+            return self.defender_stats["defense"]
 
 
     # Pure Power doubles the user's total physical Attack stat in battle.
     def pure_power_ability_attacker(self):
         if "pure-power" not in self.attacker_abilities:
-           return self.attacker.stats["attack"]
-        return self.attacker.stats["attack"] * 2
+           return self.attacker_stats["attack"]
+        return self.attacker_stats["attack"] * 2
     def pure_power_ability_defender(self):
         if "pure-power" not in self.defender_abilities:
-           return self.defender.stats["attack"]
-        return self.defender.stats["attack"] * 2
+           return self.defender_stats["attack"]
+        return self.defender_stats["attack"] * 2
 
     # Rock Head protects a Pokémon from taking recoil damage when using high-power physical attacks
     def rock_head_ability_attacker(self):
@@ -997,12 +998,12 @@ class DamageCalculator:
     # Huge Power is a powerful Pokémon ability that doubles the user's actual Attack stat during battle
     def huge_power_ability_attacker(self):
         if "huge-power" not in self.attacker_abilities:
-            return self.attacker.stats["attack"]
-        return self.attacker.stats["attack"] * 2
+            return self.attacker_stats["attack"]
+        return self.attacker_stats["attack"] * 2
     def huge_power_ability_defender(self):
         if "huge-power" not in self.defender_abilities:
-            return self.defender.stats["attack"]
-        return self.defender.stats["attack"] * 2
+            return self.defender_stats["attack"]
+        return self.defender_stats["attack"] * 2
         # Will add more logic around IV and EV later to make it more accurate.
 
     # Bulletproof: The Pokémon is immune to ball and bomb moves.
@@ -1114,14 +1115,14 @@ class DamageCalculator:
     # Each stage is +50% of the base stat: +1 = 1.5x, +2 = 2x, ... +6 = 4x.
     def speed_boost_ability_attacker(self, turns_on_field):
         if "speed-boost" not in self.attacker_abilities:
-            return self.attacker.stats["speed"]
+            return self.attacker_stats["speed"]
         stage = min(turns_on_field, 6)
-        return self.attacker.stats["speed"] * (2 + stage) / 2
+        return self.attacker_stats["speed"] * (2 + stage) / 2
     def speed_boost_ability_defender(self, turns_on_field):
         if "speed-boost" not in self.defender_abilities:
-            return self.defender.stats["speed"]
+            return self.defender_stats["speed"]
         stage = min(turns_on_field, 6)
-        return self.defender.stats["speed"] * (2 + stage) / 2
+        return self.defender_stats["speed"] * (2 + stage) / 2
 
     # Battle Armor: Attacks landed on the Pokémon will never be critical hits.
     # Returns the crit multiplier to plug into the damage formula.
@@ -1387,26 +1388,26 @@ class DamageCalculator:
     # Intimidate: When the Pokémon enters battle, it lowers the opposing Pokémon's Attack by 1 stage. Returns the opposing Pokémon's Attack stat.
     def intimidate_ability_attacker(self):
         if "intimidate" not in self.attacker_abilities:
-            return self.defender.stats["attack"]
+            return self.defender_stats["attack"]
         for ability in self.defender_abilities:
             if ability in INTIMIDATE_IMMUNITY_ABILITIES:
-                return self.defender.stats["attack"]
+                return self.defender_stats["attack"]
         if self.held_item_defender() == "clear-amulet":
-            return self.defender.stats["attack"]
+            return self.defender_stats["attack"]
         if "guard-dog" in self.defender_abilities:
-            return self.defender.stats["attack"] * 1.5
-        return self.defender.stats["attack"] * 2 / 3
+            return self.defender_stats["attack"] * 1.5
+        return self.defender_stats["attack"] * 2 / 3
     def intimidate_ability_defender(self):
         if "intimidate" not in self.defender_abilities:
-            return self.attacker.stats["attack"]
+            return self.attacker_stats["attack"]
         for ability in self.attacker_abilities:
             if ability in INTIMIDATE_IMMUNITY_ABILITIES:
-                return self.attacker.stats["attack"]
+                return self.attacker_stats["attack"]
         if self.held_item_attacker() == "clear-amulet":
-            return self.attacker.stats["attack"]
+            return self.attacker_stats["attack"]
         if "guard-dog" in self.attacker_abilities:
-            return self.attacker.stats["attack"] * 1.5
-        return self.attacker.stats["attack"] * 2 / 3
+            return self.attacker_stats["attack"] * 1.5
+        return self.attacker_stats["attack"] * 2 / 3
 
     # Shadow Tag: The opposing Pokémon can't switch out. Returns True if it's trapped.
     def shadow_tag_ability_attacker(self, switched_in_this_turn=False):
@@ -1548,30 +1549,30 @@ class DamageCalculator:
     # Swift Swim: Doubles the Pokémon's Speed in rain.
     def swift_swim_ability_attacker(self):
         if "swift-swim" not in self.attacker_abilities:
-            return self.attacker.stats["speed"]
+            return self.attacker_stats["speed"]
         if self.utility_umbrella_item_attacker() in ("rain", "heavy-rain"):
-            return self.attacker.stats["speed"] * 2
-        return self.attacker.stats["speed"]
+            return self.attacker_stats["speed"] * 2
+        return self.attacker_stats["speed"]
     def swift_swim_ability_defender(self):
         if "swift-swim" not in self.defender_abilities:
-            return self.defender.stats["speed"]
+            return self.defender_stats["speed"]
         if self.utility_umbrella_item_defender() in ("rain", "heavy-rain"):
-            return self.defender.stats["speed"] * 2
-        return self.defender.stats["speed"]
+            return self.defender_stats["speed"] * 2
+        return self.defender_stats["speed"]
 
     # Chlorophyll: Doubles the Pokémon's Speed in harsh sunlight.
     def chlorophyll_ability_attacker(self):
         if "chlorophyll" not in self.attacker_abilities:
-            return self.attacker.stats["speed"]
+            return self.attacker_stats["speed"]
         if self.utility_umbrella_item_attacker() in ("sun", "extreme-sun"):
-            return self.attacker.stats["speed"] * 2
-        return self.attacker.stats["speed"]
+            return self.attacker_stats["speed"] * 2
+        return self.attacker_stats["speed"]
     def chlorophyll_ability_defender(self):
         if "chlorophyll" not in self.defender_abilities:
-            return self.defender.stats["speed"]
+            return self.defender_stats["speed"]
         if self.utility_umbrella_item_defender() in ("sun", "extreme-sun"):
-            return self.defender.stats["speed"] * 2
-        return self.defender.stats["speed"]
+            return self.defender_stats["speed"] * 2
+        return self.defender_stats["speed"]
 
     # Illuminate: The Pokémon's moves ignore the target's evasion changes, and its accuracy can't be lowered.
     # Returns the move's accuracy when this Pokémon uses it. None means the move never misses.
@@ -1870,12 +1871,12 @@ class DamageCalculator:
     # Hustle: Boosts the Pokémon's Attack stat by 50%.
     def hustle_ability_attacker(self):
         if "hustle" not in self.attacker_abilities:
-            return self.attacker.stats["attack"]
-        return self.attacker.stats["attack"] * 1.5
+            return self.attacker_stats["attack"]
+        return self.attacker_stats["attack"] * 1.5
     def hustle_ability_defender(self):
         if "hustle" not in self.defender_abilities:
-            return self.defender.stats["attack"]
-        return self.defender.stats["attack"] * 1.5
+            return self.defender_stats["attack"]
+        return self.defender_stats["attack"] * 1.5
 
     # Hustle: The Pokémon's physical moves are 20% less accurate. Returns the move's accuracy when this Pokémon uses it.
     def hustle_accuracy_attacker(self):
@@ -1915,30 +1916,30 @@ class DamageCalculator:
     # Plus: Boosts the Pokémon's Sp. Atk by 50% if an ally has Plus or Minus. ally_abilities = the ally's abilities.
     def plus_ability_attacker(self, ally_abilities=None):
         if "plus" not in self.attacker_abilities or not ally_abilities:
-            return self.attacker.stats["special-attack"]
+            return self.attacker_stats["special-attack"]
         if "plus" in ally_abilities or "minus" in ally_abilities:
-            return self.attacker.stats["special-attack"] * 1.5
-        return self.attacker.stats["special-attack"]
+            return self.attacker_stats["special-attack"] * 1.5
+        return self.attacker_stats["special-attack"]
     def plus_ability_defender(self, ally_abilities=None):
         if "plus" not in self.defender_abilities or not ally_abilities:
-            return self.defender.stats["special-attack"]
+            return self.defender_stats["special-attack"]
         if "plus" in ally_abilities or "minus" in ally_abilities:
-            return self.defender.stats["special-attack"] * 1.5
-        return self.defender.stats["special-attack"]
+            return self.defender_stats["special-attack"] * 1.5
+        return self.defender_stats["special-attack"]
 
     # Minus: Boosts the Pokémon's Sp. Atk by 50% if an ally has Plus or Minus. ally_abilities = the ally's abilities.
     def minus_ability_attacker(self, ally_abilities=None):
         if "minus" not in self.attacker_abilities or not ally_abilities:
-            return self.attacker.stats["special-attack"]
+            return self.attacker_stats["special-attack"]
         if "plus" in ally_abilities or "minus" in ally_abilities:
-            return self.attacker.stats["special-attack"] * 1.5
-        return self.attacker.stats["special-attack"]
+            return self.attacker_stats["special-attack"] * 1.5
+        return self.attacker_stats["special-attack"]
     def minus_ability_defender(self, ally_abilities=None):
         if "minus" not in self.defender_abilities or not ally_abilities:
-            return self.defender.stats["special-attack"]
+            return self.defender_stats["special-attack"]
         if "plus" in ally_abilities or "minus" in ally_abilities:
-            return self.defender.stats["special-attack"] * 1.5
-        return self.defender.stats["special-attack"]
+            return self.defender_stats["special-attack"] * 1.5
+        return self.defender_stats["special-attack"]
 
     # Forecast: The Pokémon becomes Fire type in sun, Water type in rain, and Ice type in snow. Returns the Pokémon's types.
     def forecast_ability_attacker(self):
@@ -2224,12 +2225,12 @@ class DamageCalculator:
     # Unburden: Doubles the Pokémon's Speed after its held item is used up or lost.
     def unburden_ability_attacker(self, item_lost):
         if "unburden" not in self.attacker_abilities or not item_lost:
-            return self.attacker.stats["speed"]
-        return self.attacker.stats["speed"] * 2
+            return self.attacker_stats["speed"]
+        return self.attacker_stats["speed"] * 2
     def unburden_ability_defender(self, item_lost):
         if "unburden" not in self.defender_abilities or not item_lost:
-            return self.defender.stats["speed"]
-        return self.defender.stats["speed"] * 2
+            return self.defender_stats["speed"]
+        return self.defender_stats["speed"] * 2
 
     # Heatproof: Halves the damage the Pokémon takes from Fire-type moves.
     def heatproof_ability_attacker(self):
@@ -2313,13 +2314,13 @@ class DamageCalculator:
     def download_ability_attacker(self):
         if "download" not in self.attacker_abilities:
             return None
-        if self.defender.stats["defense"] >= self.defender.stats["special-defense"]:
+        if self.defender_stats["defense"] >= self.defender_stats["special-defense"]:
             return "special-attack"
         return "attack"
     def download_ability_defender(self):
         if "download" not in self.defender_abilities:
             return None
-        if self.attacker.stats["defense"] >= self.attacker.stats["special-defense"]:
+        if self.attacker_stats["defense"] >= self.attacker_stats["special-defense"]:
             return "special-attack"
         return "attack"
 
@@ -2414,16 +2415,16 @@ class DamageCalculator:
     # Solar Power: Boosts the Pokémon's Sp. Atk by 50% in harsh sunlight.
     def solar_power_ability_attacker(self):
         if "solar-power" not in self.attacker_abilities:
-            return self.attacker.stats["special-attack"]
+            return self.attacker_stats["special-attack"]
         if self.utility_umbrella_item_attacker() in ("sun", "extreme-sun"):
-            return self.attacker.stats["special-attack"] * 1.5
-        return self.attacker.stats["special-attack"]
+            return self.attacker_stats["special-attack"] * 1.5
+        return self.attacker_stats["special-attack"]
     def solar_power_ability_defender(self):
         if "solar-power" not in self.defender_abilities:
-            return self.defender.stats["special-attack"]
+            return self.defender_stats["special-attack"]
         if self.utility_umbrella_item_defender() in ("sun", "extreme-sun"):
-            return self.defender.stats["special-attack"] * 1.5
-        return self.defender.stats["special-attack"]
+            return self.defender_stats["special-attack"] * 1.5
+        return self.defender_stats["special-attack"]
 
     # Solar Power: The Pokémon loses 1/8 of its max HP each turn in harsh sunlight.
     def solar_power_damage_attacker(self):
@@ -2640,14 +2641,14 @@ class DamageCalculator:
 
     # Slow Start: The Pokémon's Attack and Speed are halved for its first 5 turns in battle. Returns its Attack and Speed.
     def slow_start_ability_attacker(self, turns_on_field):
-        attack = self.attacker.stats["attack"]
-        speed = self.attacker.stats["speed"]
+        attack = self.attacker_stats["attack"]
+        speed = self.attacker_stats["speed"]
         if "slow-start" not in self.attacker_abilities or turns_on_field >= 5:
             return attack, speed
         return attack * 0.5, speed * 0.5
     def slow_start_ability_defender(self, turns_on_field):
-        attack = self.defender.stats["attack"]
-        speed = self.defender.stats["speed"]
+        attack = self.defender_stats["attack"]
+        speed = self.defender_stats["speed"]
         if "slow-start" not in self.defender_abilities or turns_on_field >= 5:
             return attack, speed
         return attack * 0.5, speed * 0.5
@@ -2776,16 +2777,16 @@ class DamageCalculator:
 
     # Flower Gift: In harsh sunlight, Cherrim's Attack and Sp. Def go up by 50%. Returns its Attack and Sp. Def.
     def flower_gift_ability_attacker(self):
-        attack = self.attacker.stats["attack"]
-        special_defense = self.attacker.stats["special-defense"]
+        attack = self.attacker_stats["attack"]
+        special_defense = self.attacker_stats["special-defense"]
         if "flower-gift" not in self.attacker_abilities or not self.attacker.name.startswith("cherrim"):
             return attack, special_defense
         if self.utility_umbrella_item_attacker() in ("sun", "extreme-sun"):
             return attack * 1.5, special_defense * 1.5
         return attack, special_defense
     def flower_gift_ability_defender(self):
-        attack = self.defender.stats["attack"]
-        special_defense = self.defender.stats["special-defense"]
+        attack = self.defender_stats["attack"]
+        special_defense = self.defender_stats["special-defense"]
         if "flower-gift" not in self.defender_abilities or not self.defender.name.startswith("cherrim"):
             return attack, special_defense
         if self.utility_umbrella_item_defender() in ("sun", "extreme-sun"):
@@ -2877,14 +2878,14 @@ class DamageCalculator:
 
     # Defeatist: The Pokémon's Attack and Sp. Atk are halved when its HP is 1/2 or less. Returns its Attack and Sp. Atk.
     def defeatist_ability_attacker(self, current_hp, max_hp):
-        attack = self.attacker.stats["attack"]
-        special_attack = self.attacker.stats["special-attack"]
+        attack = self.attacker_stats["attack"]
+        special_attack = self.attacker_stats["special-attack"]
         if "defeatist" not in self.attacker_abilities or current_hp > max_hp / 2:
             return attack, special_attack
         return attack * 0.5, special_attack * 0.5
     def defeatist_ability_defender(self, current_hp, max_hp):
-        attack = self.defender.stats["attack"]
-        special_attack = self.defender.stats["special-attack"]
+        attack = self.defender_stats["attack"]
+        special_attack = self.defender_stats["special-attack"]
         if "defeatist" not in self.defender_abilities or current_hp > max_hp / 2:
             return attack, special_attack
         return attack * 0.5, special_attack * 0.5
@@ -3080,16 +3081,16 @@ class DamageCalculator:
     # Sand Rush's immunity to sandstorm dmg is in WEATHER_EFFECTS.
     def sand_rush_ability_attacker(self):
         if "sand-rush" not in self.attacker_abilities:
-            return self.attacker.stats["speed"]
+            return self.attacker_stats["speed"]
         if self.current_weather() == "sandstorm":
-            return self.attacker.stats["speed"] * 2
-        return self.attacker.stats["speed"]
+            return self.attacker_stats["speed"] * 2
+        return self.attacker_stats["speed"]
     def sand_rush_ability_defender(self):
         if "sand-rush" not in self.defender_abilities:
-            return self.defender.stats["speed"]
+            return self.defender_stats["speed"]
         if self.current_weather() == "sandstorm":
-            return self.defender.stats["speed"] * 2
-        return self.defender.stats["speed"]
+            return self.defender_stats["speed"] * 2
+        return self.defender_stats["speed"]
 
     # Wonder Skin: Status moves aimed at the Pokémon only have 50% accuracy. Returns the move's accuracy. None means the move never misses.
     def wonder_skin_ability_attacker(self):
@@ -3133,17 +3134,18 @@ class DamageCalculator:
         return disguised_as
 
     # Imposter: When the Pokémon enters battle, it transforms into the opposing Pokémon and copies its types, stats (except HP) and ability. Returns its types, stats and abilities after.
+    # The copied stats are the target's real stats, so they don't go through calculate_stats again.
     def imposter_ability_attacker(self):
         if "imposter" not in self.attacker_abilities:
-            return self.attacker.types, self.attacker.stats, self.attacker_abilities
-        stats = dict(self.defender.stats)
-        stats["hp"] = self.attacker.stats["hp"]
+            return self.attacker.types, self.attacker_stats, self.attacker_abilities
+        stats = dict(self.defender_stats)
+        stats["hp"] = self.attacker_stats["hp"]
         return self.defender.types, stats, self.defender_abilities
     def imposter_ability_defender(self):
         if "imposter" not in self.defender_abilities:
-            return self.defender.types, self.defender.stats, self.defender_abilities
-        stats = dict(self.attacker.stats)
-        stats["hp"] = self.defender.stats["hp"]
+            return self.defender.types, self.defender_stats, self.defender_abilities
+        stats = dict(self.attacker_stats)
+        stats["hp"] = self.defender_stats["hp"]
         return self.attacker.types, stats, self.attacker_abilities
 
     # Infiltrator: The Pokémon's moves ignore the target's Reflect, Light Screen and Aurora Veil. Returns the screen dmg multiplier.
@@ -3401,12 +3403,12 @@ class DamageCalculator:
     # Fur Coat: Doubles the Pokémon's Defense.
     def fur_coat_ability_attacker(self):
         if "fur-coat" not in self.attacker_abilities:
-            return self.attacker.stats["defense"]
-        return self.attacker.stats["defense"] * 2
+            return self.attacker_stats["defense"]
+        return self.attacker_stats["defense"] * 2
     def fur_coat_ability_defender(self):
         if "fur-coat" not in self.defender_abilities:
-            return self.defender.stats["defense"]
-        return self.defender.stats["defense"] * 2
+            return self.defender_stats["defense"]
+        return self.defender_stats["defense"] * 2
 
     # Magician: When the Pokémon hits a target with a damaging move, it steals the target's item if it isn't holding one. Returns the item it's holding after.
     def magician_ability_attacker(self, held_item, opponent_item):
@@ -3526,12 +3528,12 @@ class DamageCalculator:
     # Grass Pelt: Boosts the Pokémon's Defense by 50% in Grassy Terrain.
     def grass_pelt_ability_attacker(self):
         if "grass-pelt" not in self.attacker_abilities or self.terrain != "grassy-terrain":
-            return self.attacker.stats["defense"]
-        return self.attacker.stats["defense"] * 1.5
+            return self.attacker_stats["defense"]
+        return self.attacker_stats["defense"] * 1.5
     def grass_pelt_ability_defender(self):
         if "grass-pelt" not in self.defender_abilities or self.terrain != "grassy-terrain":
-            return self.defender.stats["defense"]
-        return self.defender.stats["defense"] * 1.5
+            return self.defender_stats["defense"]
+        return self.defender_stats["defense"] * 1.5
 
     # Symbiosis: When the Pokémon's ally uses up its item, the Pokémon passes its own item to the ally. Returns the item the ally gets.
     # ally_used_item = True if the ally just used up its item.
@@ -3769,14 +3771,14 @@ class DamageCalculator:
     # Stakeout: The Pokémon's Attack and Sp. Atk are doubled against a target that just switched in. Returns its Attack and Sp. Atk.
     # target_switched_in = True if the target switched in this turn.
     def stakeout_ability_attacker(self, target_switched_in=False):
-        attack = self.attacker.stats["attack"]
-        special_attack = self.attacker.stats["special-attack"]
+        attack = self.attacker_stats["attack"]
+        special_attack = self.attacker_stats["special-attack"]
         if "stakeout" not in self.attacker_abilities or not target_switched_in:
             return attack, special_attack
         return attack * 2, special_attack * 2
     def stakeout_ability_defender(self, target_switched_in=False):
-        attack = self.defender.stats["attack"]
-        special_attack = self.defender.stats["special-attack"]
+        attack = self.defender_stats["attack"]
+        special_attack = self.defender_stats["special-attack"]
         if "stakeout" not in self.defender_abilities or not target_switched_in:
             return attack, special_attack
         return attack * 2, special_attack * 2
@@ -3857,16 +3859,16 @@ class DamageCalculator:
     # Slush Rush: Doubles the Pokémon's Speed in snow.
     def slush_rush_ability_attacker(self):
         if "slush-rush" not in self.attacker_abilities:
-            return self.attacker.stats["speed"]
+            return self.attacker_stats["speed"]
         if self.current_weather() in ("snow", "hail"):
-            return self.attacker.stats["speed"] * 2
-        return self.attacker.stats["speed"]
+            return self.attacker_stats["speed"] * 2
+        return self.attacker_stats["speed"]
     def slush_rush_ability_defender(self):
         if "slush-rush" not in self.defender_abilities:
-            return self.defender.stats["speed"]
+            return self.defender_stats["speed"]
         if self.current_weather() in ("snow", "hail"):
-            return self.defender.stats["speed"] * 2
-        return self.defender.stats["speed"]
+            return self.defender_stats["speed"] * 2
+        return self.defender_stats["speed"]
 
     # Long Reach: The Pokémon's moves don't make contact. Returns True if the move makes contact.
     def long_reach_ability_attacker(self):
@@ -3916,12 +3918,12 @@ class DamageCalculator:
     # Surge Surfer: Doubles the Pokémon's Speed in Electric Terrain.
     def surge_surfer_ability_attacker(self):
         if "surge-surfer" not in self.attacker_abilities or self.terrain != "electric-terrain":
-            return self.attacker.stats["speed"]
-        return self.attacker.stats["speed"] * 2
+            return self.attacker_stats["speed"]
+        return self.attacker_stats["speed"] * 2
     def surge_surfer_ability_defender(self):
         if "surge-surfer" not in self.defender_abilities or self.terrain != "electric-terrain":
-            return self.defender.stats["speed"]
-        return self.defender.stats["speed"] * 2
+            return self.defender_stats["speed"]
+        return self.defender_stats["speed"] * 2
 
     # Schooling: Wishiwashi is in School Form above 1/4 HP and goes back to Solo Form at 1/4 HP or less. Returns its form name, types and stats.
     def schooling_ability_attacker(self, current_hp, max_hp):
@@ -4155,12 +4157,12 @@ class DamageCalculator:
         if "beast-boost" not in self.attacker_abilities or not knocked_out:
             return None
         stats = ["attack", "defense", "special-attack", "special-defense", "speed"]
-        return max(stats, key=lambda stat: self.attacker.stats[stat])
+        return max(stats, key=lambda stat: self.attacker_stats[stat])
     def beast_boost_ability_defender(self, knocked_out):
         if "beast-boost" not in self.defender_abilities or not knocked_out:
             return None
         stats = ["attack", "defense", "special-attack", "special-defense", "speed"]
-        return max(stats, key=lambda stat: self.defender.stats[stat])
+        return max(stats, key=lambda stat: self.defender_stats[stat])
 
     # RKS System: Silvally's type changes to match the Memory it's holding. Returns the Pokémon's types.
     def rks_system_ability_attacker(self, held_item):
@@ -4596,12 +4598,12 @@ class DamageCalculator:
     # Gorilla Tactics: Boosts the Pokémon's Attack by 50%, but it can only use the first move it picks.
     def gorilla_tactics_ability_attacker(self):
         if "gorilla-tactics" not in self.attacker_abilities:
-            return self.attacker.stats["attack"]
-        return self.attacker.stats["attack"] * 1.5
+            return self.attacker_stats["attack"]
+        return self.attacker_stats["attack"] * 1.5
     def gorilla_tactics_ability_defender(self):
         if "gorilla-tactics" not in self.defender_abilities:
-            return self.defender.stats["attack"]
-        return self.defender.stats["attack"] * 1.5
+            return self.defender_stats["attack"]
+        return self.defender_stats["attack"] * 1.5
         # The move lock is in choice_lock_item.
 
     # Neutralizing Gas: While the Pokémon is out, the other Pokémon's abilities don't work. Returns the other Pokémon's abilities that still work.
@@ -4985,7 +4987,7 @@ class DamageCalculator:
         if self.current_weather() != "sun" and not booster_energy:
             return None, 1
         stats = ["attack", "defense", "special-attack", "special-defense", "speed"]
-        best_stat = max(stats, key=lambda stat: self.attacker.stats[stat])
+        best_stat = max(stats, key=lambda stat: self.attacker_stats[stat])
         if best_stat == "speed":
             return best_stat, 1.5
         return best_stat, 1.3
@@ -4995,7 +4997,7 @@ class DamageCalculator:
         if self.current_weather() != "sun" and not booster_energy:
             return None, 1
         stats = ["attack", "defense", "special-attack", "special-defense", "speed"]
-        best_stat = max(stats, key=lambda stat: self.defender.stats[stat])
+        best_stat = max(stats, key=lambda stat: self.defender_stats[stat])
         if best_stat == "speed":
             return best_stat, 1.5
         return best_stat, 1.3
@@ -5008,7 +5010,7 @@ class DamageCalculator:
         if self.terrain != "electric-terrain" and not booster_energy:
             return None, 1
         stats = ["attack", "defense", "special-attack", "special-defense", "speed"]
-        best_stat = max(stats, key=lambda stat: self.attacker.stats[stat])
+        best_stat = max(stats, key=lambda stat: self.attacker_stats[stat])
         if best_stat == "speed":
             return best_stat, 1.5
         return best_stat, 1.3
@@ -5018,7 +5020,7 @@ class DamageCalculator:
         if self.terrain != "electric-terrain" and not booster_energy:
             return None, 1
         stats = ["attack", "defense", "special-attack", "special-defense", "speed"]
-        best_stat = max(stats, key=lambda stat: self.defender.stats[stat])
+        best_stat = max(stats, key=lambda stat: self.defender_stats[stat])
         if best_stat == "speed":
             return best_stat, 1.5
         return best_stat, 1.3
@@ -5036,42 +5038,42 @@ class DamageCalculator:
     # Vessel of Ruin: Lowers the Sp. Atk of every other Pokémon by 25%. Returns the opposing Pokémon's Sp. Atk.
     def vessel_of_ruin_ability_attacker(self):
         if "vessel-of-ruin" not in self.attacker_abilities or "vessel-of-ruin" in self.defender_abilities:
-            return self.defender.stats["special-attack"]
-        return self.defender.stats["special-attack"] * 0.75
+            return self.defender_stats["special-attack"]
+        return self.defender_stats["special-attack"] * 0.75
     def vessel_of_ruin_ability_defender(self):
         if "vessel-of-ruin" not in self.defender_abilities or "vessel-of-ruin" in self.attacker_abilities:
-            return self.attacker.stats["special-attack"]
-        return self.attacker.stats["special-attack"] * 0.75
+            return self.attacker_stats["special-attack"]
+        return self.attacker_stats["special-attack"] * 0.75
 
     # Sword of Ruin: Lowers the Defense of every other Pokémon by 25%. Returns the opposing Pokémon's Defense.
     def sword_of_ruin_ability_attacker(self):
         if "sword-of-ruin" not in self.attacker_abilities or "sword-of-ruin" in self.defender_abilities:
-            return self.defender.stats["defense"]
-        return self.defender.stats["defense"] * 0.75
+            return self.defender_stats["defense"]
+        return self.defender_stats["defense"] * 0.75
     def sword_of_ruin_ability_defender(self):
         if "sword-of-ruin" not in self.defender_abilities or "sword-of-ruin" in self.attacker_abilities:
-            return self.attacker.stats["defense"]
-        return self.attacker.stats["defense"] * 0.75
+            return self.attacker_stats["defense"]
+        return self.attacker_stats["defense"] * 0.75
 
     # Tablets of Ruin: Lowers the Attack of every other Pokémon by 25%. Returns the opposing Pokémon's Attack.
     def tablets_of_ruin_ability_attacker(self):
         if "tablets-of-ruin" not in self.attacker_abilities or "tablets-of-ruin" in self.defender_abilities:
-            return self.defender.stats["attack"]
-        return self.defender.stats["attack"] * 0.75
+            return self.defender_stats["attack"]
+        return self.defender_stats["attack"] * 0.75
     def tablets_of_ruin_ability_defender(self):
         if "tablets-of-ruin" not in self.defender_abilities or "tablets-of-ruin" in self.attacker_abilities:
-            return self.attacker.stats["attack"]
-        return self.attacker.stats["attack"] * 0.75
+            return self.attacker_stats["attack"]
+        return self.attacker_stats["attack"] * 0.75
 
     # Beads of Ruin: Lowers the Sp. Def of every other Pokémon by 25%. Returns the opposing Pokémon's Sp. Def.
     def beads_of_ruin_ability_attacker(self):
         if "beads-of-ruin" not in self.attacker_abilities or "beads-of-ruin" in self.defender_abilities:
-            return self.defender.stats["special-defense"]
-        return self.defender.stats["special-defense"] * 0.75
+            return self.defender_stats["special-defense"]
+        return self.defender_stats["special-defense"] * 0.75
     def beads_of_ruin_ability_defender(self):
         if "beads-of-ruin" not in self.defender_abilities or "beads-of-ruin" in self.attacker_abilities:
-            return self.attacker.stats["special-defense"]
-        return self.attacker.stats["special-defense"] * 0.75
+            return self.attacker_stats["special-defense"]
+        return self.attacker_stats["special-defense"] * 0.75
 
     # Orichalcum Pulse: Summons harsh sunlight for 5 turns when the Pokémon enters battle. Returns the weather.
     def orichalcum_pulse_ability_attacker(self):
@@ -5094,16 +5096,16 @@ class DamageCalculator:
     # Orichalcum Pulse: Boosts the Pokémon's Attack by 33% in harsh sunlight.
     def orichalcum_pulse_attack_attacker(self):
         if "orichalcum-pulse" not in self.attacker_abilities:
-            return self.attacker.stats["attack"]
+            return self.attacker_stats["attack"]
         if self.utility_umbrella_item_attacker() in ("sun", "extreme-sun"):
-            return self.attacker.stats["attack"] * 1.33
-        return self.attacker.stats["attack"]
+            return self.attacker_stats["attack"] * 1.33
+        return self.attacker_stats["attack"]
     def orichalcum_pulse_attack_defender(self):
         if "orichalcum-pulse" not in self.defender_abilities:
-            return self.defender.stats["attack"]
+            return self.defender_stats["attack"]
         if self.utility_umbrella_item_defender() in ("sun", "extreme-sun"):
-            return self.defender.stats["attack"] * 1.33
-        return self.defender.stats["attack"]
+            return self.defender_stats["attack"] * 1.33
+        return self.defender_stats["attack"]
 
     # Hadron Engine: Sets Electric Terrain for 5 turns when the Pokémon enters battle. Returns the terrain.
     def hadron_engine_ability_attacker(self):
@@ -5122,12 +5124,12 @@ class DamageCalculator:
     # Hadron Engine: Boosts the Pokémon's Sp. Atk by 33% in Electric Terrain.
     def hadron_engine_special_attack_attacker(self):
         if "hadron-engine" not in self.attacker_abilities or self.terrain != "electric-terrain":
-            return self.attacker.stats["special-attack"]
-        return self.attacker.stats["special-attack"] * 1.33
+            return self.attacker_stats["special-attack"]
+        return self.attacker_stats["special-attack"] * 1.33
     def hadron_engine_special_attack_defender(self):
         if "hadron-engine" not in self.defender_abilities or self.terrain != "electric-terrain":
-            return self.defender.stats["special-attack"]
-        return self.defender.stats["special-attack"] * 1.33
+            return self.defender_stats["special-attack"]
+        return self.defender_stats["special-attack"] * 1.33
 
     # Opportunist: When an opposing Pokémon's stats go up, the Pokémon copies the boost. Returns the stage change it copies.
     # stage_change = how many stages the opposing Pokémon's stat changed.
@@ -5529,12 +5531,12 @@ class DamageCalculator:
         if "eelevate" not in self.attacker_abilities or not knocked_out:
             return None
         stats = ["attack", "defense", "special-attack", "special-defense", "speed"]
-        return max(stats, key=lambda stat: self.attacker.stats[stat])
+        return max(stats, key=lambda stat: self.attacker_stats[stat])
     def eelevate_boost_defender(self, knocked_out):
         if "eelevate" not in self.defender_abilities or not knocked_out:
             return None
         stats = ["attack", "defense", "special-attack", "special-defense", "speed"]
-        return max(stats, key=lambda stat: self.defender.stats[stat])
+        return max(stats, key=lambda stat: self.defender_stats[stat])
 
     # Fire Mane: Boosts the power of the Pokémon's Fire-type moves by 50%.
     def fire_mane_ability_attacker(self):
@@ -5970,12 +5972,12 @@ class DamageCalculator:
     # Macho Brace: Halves the Pokémon's Speed. It still works with Klutz.
     def macho_brace_item_attacker(self):
         if self.held_item_attacker() != "macho-brace":
-            return self.attacker.stats["speed"]
-        return self.attacker.stats["speed"] * 0.5
+            return self.attacker_stats["speed"]
+        return self.attacker_stats["speed"] * 0.5
     def macho_brace_item_defender(self):
         if self.held_item_defender() != "macho-brace":
-            return self.defender.stats["speed"]
-        return self.defender.stats["speed"] * 0.5
+            return self.defender_stats["speed"]
+        return self.defender_stats["speed"] * 0.5
 
     # Quick Claw: The Pokémon has a 20% chance to move first among moves with the same priority. Returns the move's priority.
     def quick_claw_item_attacker(self):
@@ -6011,12 +6013,12 @@ class DamageCalculator:
     # Choice Band: Boosts the Pokémon's Attack by 50%, but it can only use the first move it picks.
     def choice_band_item_attacker(self):
         if self.held_item_attacker() != "choice-band":
-            return self.attacker.stats["attack"]
-        return self.attacker.stats["attack"] * 1.5
+            return self.attacker_stats["attack"]
+        return self.attacker_stats["attack"] * 1.5
     def choice_band_item_defender(self):
         if self.held_item_defender() != "choice-band":
-            return self.defender.stats["attack"]
-        return self.defender.stats["attack"] * 1.5
+            return self.defender_stats["attack"]
+        return self.defender_stats["attack"] * 1.5
 
     # Choice items and Gorilla Tactics lock the Pokémon into the first move it uses until it switches out. Returns True if it can use this move.
     # locked_move = the move it's locked into, or None if it hasn't used a move yet.
@@ -6074,22 +6076,22 @@ class DamageCalculator:
     # Deep Sea Tooth: Doubles Clamperl's Sp. Atk.
     def deep_sea_tooth_item_attacker(self):
         if self.held_item_attacker() != "deep-sea-tooth" or self.attacker.pokedex_id != 366:
-            return self.attacker.stats["special-attack"]
-        return self.attacker.stats["special-attack"] * 2
+            return self.attacker_stats["special-attack"]
+        return self.attacker_stats["special-attack"] * 2
     def deep_sea_tooth_item_defender(self):
         if self.held_item_defender() != "deep-sea-tooth" or self.defender.pokedex_id != 366:
-            return self.defender.stats["special-attack"]
-        return self.defender.stats["special-attack"] * 2
+            return self.defender_stats["special-attack"]
+        return self.defender_stats["special-attack"] * 2
 
     # Deep Sea Scale: Doubles Clamperl's Sp. Def.
     def deep_sea_scale_item_attacker(self):
         if self.held_item_attacker() != "deep-sea-scale" or self.attacker.pokedex_id != 366:
-            return self.attacker.stats["special-defense"]
-        return self.attacker.stats["special-defense"] * 2
+            return self.attacker_stats["special-defense"]
+        return self.attacker_stats["special-defense"] * 2
     def deep_sea_scale_item_defender(self):
         if self.held_item_defender() != "deep-sea-scale" or self.defender.pokedex_id != 366:
-            return self.defender.stats["special-defense"]
-        return self.defender.stats["special-defense"] * 2
+            return self.defender_stats["special-defense"]
+        return self.defender_stats["special-defense"] * 2
 
     # Focus Band: The Pokémon has a 10% chance to survive a hit that would knock it out, with 1 HP left. Returns the damage it actually takes.
     # damage = the dmg from the hit. current_hp = its HP before the hit.
@@ -6128,14 +6130,14 @@ class DamageCalculator:
 
     # Light Ball: Doubles Pikachu's Attack and Sp. Atk. Returns its Attack and Sp. Atk.
     def light_ball_item_attacker(self):
-        attack = self.attacker.stats["attack"]
-        special_attack = self.attacker.stats["special-attack"]
+        attack = self.attacker_stats["attack"]
+        special_attack = self.attacker_stats["special-attack"]
         if self.held_item_attacker() != "light-ball" or self.attacker.pokedex_id != 25:
             return attack, special_attack
         return attack * 2, special_attack * 2
     def light_ball_item_defender(self):
-        attack = self.defender.stats["attack"]
-        special_attack = self.defender.stats["special-attack"]
+        attack = self.defender_stats["attack"]
+        special_attack = self.defender_stats["special-attack"]
         if self.held_item_defender() != "light-ball" or self.defender.pokedex_id != 25:
             return attack, special_attack
         return attack * 2, special_attack * 2
@@ -6180,22 +6182,22 @@ class DamageCalculator:
     # Metal Powder: Doubles Ditto's Defense as long as it hasn't transformed.
     def metal_powder_item_attacker(self, transformed=False):
         if self.held_item_attacker() != "metal-powder" or self.attacker.pokedex_id != 132 or transformed:
-            return self.attacker.stats["defense"]
-        return self.attacker.stats["defense"] * 2
+            return self.attacker_stats["defense"]
+        return self.attacker_stats["defense"] * 2
     def metal_powder_item_defender(self, transformed=False):
         if self.held_item_defender() != "metal-powder" or self.defender.pokedex_id != 132 or transformed:
-            return self.defender.stats["defense"]
-        return self.defender.stats["defense"] * 2
+            return self.defender_stats["defense"]
+        return self.defender_stats["defense"] * 2
 
     # Thick Club: Doubles Cubone and Marowak's Attack.
     def thick_club_item_attacker(self):
         if self.held_item_attacker() != "thick-club" or self.attacker.pokedex_id not in (104, 105):
-            return self.attacker.stats["attack"]
-        return self.attacker.stats["attack"] * 2
+            return self.attacker_stats["attack"]
+        return self.attacker_stats["attack"] * 2
     def thick_club_item_defender(self):
         if self.held_item_defender() != "thick-club" or self.defender.pokedex_id not in (104, 105):
-            return self.defender.stats["attack"]
-        return self.defender.stats["attack"] * 2
+            return self.defender_stats["attack"]
+        return self.defender_stats["attack"] * 2
 
     # Leek: Raises Farfetch'd and Sirfetch'd's critical hit ratio by 2 stages. Returns how many crit stages it adds.
     def leek_item_attacker(self):
@@ -6310,12 +6312,12 @@ class DamageCalculator:
     # Quick Powder: Doubles Ditto's Speed as long as it hasn't transformed.
     def quick_powder_item_attacker(self, transformed=False):
         if self.held_item_attacker() != "quick-powder" or self.attacker.pokedex_id != 132 or transformed:
-            return self.attacker.stats["speed"]
-        return self.attacker.stats["speed"] * 2
+            return self.attacker_stats["speed"]
+        return self.attacker_stats["speed"] * 2
     def quick_powder_item_defender(self, transformed=False):
         if self.held_item_defender() != "quick-powder" or self.defender.pokedex_id != 132 or transformed:
-            return self.defender.stats["speed"]
-        return self.defender.stats["speed"] * 2
+            return self.defender_stats["speed"]
+        return self.defender_stats["speed"] * 2
 
     # Focus Sash: If the Pokémon is at full HP, it survives a hit that would knock it out with 1 HP left and the sash is used up. Returns the dmg it actually takes.
     # damage = the dmg from the hit. current_hp = its HP before the hit.
@@ -6358,12 +6360,12 @@ class DamageCalculator:
     # Iron Ball: Halves the Pokémon's Speed and grounds it (handled in grounded_attacker / grounded_defender).
     def iron_ball_item_attacker(self):
         if self.held_item_attacker() != "iron-ball":
-            return self.attacker.stats["speed"]
-        return self.attacker.stats["speed"] * 0.5
+            return self.attacker_stats["speed"]
+        return self.attacker_stats["speed"] * 0.5
     def iron_ball_item_defender(self):
         if self.held_item_defender() != "iron-ball":
-            return self.defender.stats["speed"]
-        return self.defender.stats["speed"] * 0.5
+            return self.defender_stats["speed"]
+        return self.defender_stats["speed"] * 0.5
 
     # Iron Ball also lets Ground-type moves hit a Flying-type holder, and they always do neutral dmg to it. Returns the type effectiveness.
     def iron_ball_ground_item_attacker(self):
@@ -6425,12 +6427,12 @@ class DamageCalculator:
     # Choice Scarf: Boosts the Pokémon's Speed by 50%, but it can only use the first move it picks.
     def choice_scarf_item_attacker(self):
         if self.held_item_attacker() != "choice-scarf":
-            return self.attacker.stats["speed"]
-        return self.attacker.stats["speed"] * 1.5
+            return self.attacker_stats["speed"]
+        return self.attacker_stats["speed"] * 1.5
     def choice_scarf_item_defender(self):
         if self.held_item_defender() != "choice-scarf":
-            return self.defender.stats["speed"]
-        return self.defender.stats["speed"] * 1.5
+            return self.defender_stats["speed"]
+        return self.defender_stats["speed"] * 1.5
 
     # Sticky Barb: The Pokémon loses 1/8 of its max HP at the end of each turn. Returns the HP change as a fraction of its max HP.
     def sticky_barb_item_attacker(self):
@@ -6451,12 +6453,12 @@ class DamageCalculator:
     # Power items (Power Bracer, Power Belt, etc.): Halve the Pokémon's Speed. They still work with Klutz.
     def power_item_attacker(self):
         if self.held_item_attacker() not in POWER_ITEMS:
-            return self.attacker.stats["speed"]
-        return self.attacker.stats["speed"] * 0.5
+            return self.attacker_stats["speed"]
+        return self.attacker_stats["speed"] * 0.5
     def power_item_defender(self):
         if self.held_item_defender() not in POWER_ITEMS:
-            return self.defender.stats["speed"]
-        return self.defender.stats["speed"] * 0.5
+            return self.defender_stats["speed"]
+        return self.defender_stats["speed"] * 0.5
 
     # Shed Shell: The Pokémon can always switch out, even if an ability like Shadow Tag is trapping it. Returns True if it's still trapped.
     # trapped = whether it would be trapped without Shed Shell.
@@ -6488,12 +6490,12 @@ class DamageCalculator:
     # Choice Specs: Boosts the Pokémon's Sp. Atk by 50%, but it can only use the first move it picks.
     def choice_specs_item_attacker(self):
         if self.held_item_attacker() != "choice-specs":
-            return self.attacker.stats["special-attack"]
-        return self.attacker.stats["special-attack"] * 1.5
+            return self.attacker_stats["special-attack"]
+        return self.attacker_stats["special-attack"] * 1.5
     def choice_specs_item_defender(self):
         if self.held_item_defender() != "choice-specs":
-            return self.defender.stats["special-attack"]
-        return self.defender.stats["special-attack"] * 1.5
+            return self.defender_stats["special-attack"]
+        return self.defender_stats["special-attack"] * 1.5
 
     # Plates (Flame Plate, Splash Plate, etc.): Boost the power of the Pokémon's moves of the Plate's type by 20%.
     def plate_item_attacker(self):
@@ -6533,14 +6535,14 @@ class DamageCalculator:
 
     # Eviolite: Boosts the Defense and Sp. Def of a Pokémon that can still evolve by 50%. Returns its Defense and Sp. Def.
     def eviolite_item_attacker(self):
-        defense = self.attacker.stats["defense"]
-        special_defense = self.attacker.stats["special-defense"]
+        defense = self.attacker_stats["defense"]
+        special_defense = self.attacker_stats["special-defense"]
         if self.held_item_attacker() != "eviolite" or self.attacker.name not in NOT_FULLY_EVOLVED:
             return defense, special_defense
         return defense * 1.5, special_defense * 1.5
     def eviolite_item_defender(self):
-        defense = self.defender.stats["defense"]
-        special_defense = self.defender.stats["special-defense"]
+        defense = self.defender_stats["defense"]
+        special_defense = self.defender_stats["special-defense"]
         if self.held_item_defender() != "eviolite" or self.defender.name not in NOT_FULLY_EVOLVED:
             return defense, special_defense
         return defense * 1.5, special_defense * 1.5
@@ -6693,12 +6695,12 @@ class DamageCalculator:
     # Assault Vest: Boosts the Pokémon's Sp. Def by 50%, but it can't use status moves.
     def assault_vest_item_attacker(self):
         if self.held_item_attacker() != "assault-vest":
-            return self.attacker.stats["special-defense"]
-        return self.attacker.stats["special-defense"] * 1.5
+            return self.attacker_stats["special-defense"]
+        return self.attacker_stats["special-defense"] * 1.5
     def assault_vest_item_defender(self):
         if self.held_item_defender() != "assault-vest":
-            return self.defender.stats["special-defense"]
-        return self.defender.stats["special-defense"] * 1.5
+            return self.defender_stats["special-defense"]
+        return self.defender_stats["special-defense"] * 1.5
 
     # Returns True if the Pokémon can use this move while holding Assault Vest. Me First still works.
     def assault_vest_move_item_attacker(self):
