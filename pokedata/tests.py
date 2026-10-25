@@ -470,3 +470,51 @@ class MoveBlockedTests(TestCase):
         self.assertTrue(make_calc("charizard", "pelipper", "sky-drop").move_blocked())
         self.assertTrue(make_calc("charizard", "snorlax", "sky-drop").move_blocked())
         self.assertFalse(make_calc("charizard", "machamp", "sky-drop").move_blocked())
+
+class FixedDamageTests(TestCase):
+    fixtures = ["pokedata"]
+
+    # Seismic Toss does dmg equal to the user's level.
+    def test_seismic_toss(self):
+        self.assertEqual(make_calc("machamp", "snorlax", "seismic-toss").fixed_damage(165, 235), 50)
+        self.assertEqual(make_calc("machamp", "snorlax", "seismic-toss", attacker_build={"level": 37}).fixed_damage(165, 235), 37)
+
+    # Night Shade works the same way.
+    def test_night_shade(self):
+        self.assertEqual(make_calc("gengar", "snorlax", "night-shade").fixed_damage(120, 235), 50)
+
+    # Dragon Rage always does 40 and Sonic Boom always does 20.
+    def test_dragon_rage_and_sonic_boom(self):
+        self.assertEqual(make_calc("dragonite", "snorlax", "dragon-rage").fixed_damage(166, 235), 40)
+        self.assertEqual(make_calc("magnezone", "snorlax", "sonic-boom").fixed_damage(130, 235), 20)
+
+    # Super Fang does half the target's current HP, and always at least 1.
+    def test_super_fang(self):
+        self.assertEqual(make_calc("raticate", "snorlax", "super-fang").fixed_damage(115, 157), 78)
+        self.assertEqual(make_calc("raticate", "snorlax", "super-fang").fixed_damage(115, 1), 1)
+
+    # Ruination and Nature's Madness work the same way.
+    def test_ruination_and_natures_madness(self):
+        self.assertEqual(make_calc("chien-pao", "snorlax", "ruination").fixed_damage(155, 200), 100)
+        self.assertEqual(make_calc("tapu-lele", "snorlax", "natures-madness").fixed_damage(130, 200), 100)
+
+    # Final Gambit does dmg equal to the user's HP.
+    def test_final_gambit(self):
+        self.assertEqual(make_calc("machamp", "snorlax", "final-gambit").fixed_damage(120, 235), 120)
+
+    # Endeavor brings the target down to the user's HP, and does nothing if the user has more HP.
+    def test_endeavor(self):
+        self.assertEqual(make_calc("machamp", "snorlax", "endeavor").fixed_damage(10, 150), 140)
+        self.assertEqual(make_calc("machamp", "snorlax", "endeavor").fixed_damage(150, 10), 0)
+
+    # One-hit KO moves do all the target's HP, unless it has Sturdy, is a higher level, or is an Ice type hit by Sheer Cold.
+    def test_ohko_moves(self):
+        self.assertEqual(make_calc("garchomp", "snorlax", "fissure").fixed_damage(183, 200), 200)
+        self.assertEqual(make_calc("garchomp", "snorlax", "fissure", defender_ability="sturdy").fixed_damage(183, 200), 0)
+        self.assertEqual(make_calc("garchomp", "snorlax", "fissure", attacker_build={"level": 40}).fixed_damage(150, 200), 0)
+        self.assertEqual(make_calc("lapras", "lapras", "sheer-cold").fixed_damage(205, 205), 0)
+        self.assertEqual(make_calc("lapras", "snorlax", "sheer-cold").fixed_damage(205, 235), 235)
+
+    # Regular moves don't do set dmg.
+    def test_regular_move(self):
+        self.assertIsNone(make_calc("snorlax", "machamp", "tackle").fixed_damage(235, 165))

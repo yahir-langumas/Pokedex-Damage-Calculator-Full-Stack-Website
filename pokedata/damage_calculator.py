@@ -7334,3 +7334,26 @@ class DamageCalculator:
         if self.queenly_majesty_ability_defender() or self.dazzling_ability_defender() or self.armor_tail_ability_defender():
             return True
         return self.terrain_blocks_priority_defender()
+    
+      # Moves that do a set amount of dmg (Seismic Toss, Super Fang, one-hit KO moves, etc.). Returns the dmg, or None if the move isn't one of them.
+    def fixed_damage(self, attacker_hp, defender_hp):
+        name = self.move_name
+        if name in ("seismic-toss", "night-shade"):
+            return self.attacker_level
+        if name == "dragon-rage":
+            return 40
+        if name == "sonic-boom":
+            return 20
+        if name in ("super-fang", "ruination", "natures-madness"):
+            return max(1, defender_hp // 2)
+        if name == "final-gambit":
+            return attacker_hp
+        if name == "endeavor":
+            return max(0, defender_hp - attacker_hp)
+        if self.ohko_move():
+            if "sturdy" in self.defender_abilities or self.attacker_level < self.defender_level:
+                return 0
+            if name == "sheer-cold" and "ice" in self.defender.types:
+                return 0
+            return defender_hp
+        return None
