@@ -7307,3 +7307,30 @@ class DamageCalculator:
         if effectiveness > 0 and "tera-shell" in self.defender_abilities and self.tera_shell_ability_defender(defender_hp, self.defender_stats["hp"]) == 0.5:
             effectiveness = 0.5
         return effectiveness
+    
+      # Checks the defender's abilities, its item, primal weather and Psychic Terrain for anything that stops the move completely. Returns True if the move does no dmg.
+    def move_blocked(self):
+        name = self.move_name
+        # Moves that fail on their own in some situations.
+        if ((name == "poltergeist" and self.defender_item is None)
+                or (name == "dream-eater" and self.status_defender != "sleep" and "comatose" not in self.defender_abilities)
+                or (name == "steel-roller" and not self.terrain)
+                or (name == "synchronoise" and not set(self.attacker.types) & set(self.defender.types))
+                or (name == "burn-up" and "fire" not in self.attacker.types)
+                or (name == "double-shock" and "electric" not in self.attacker.types)
+                or (name == "sky-drop" and ("flying" in self.defender.types or self.final_weight_defender() >= 2000))):
+            return True
+        if self.weather_move_power() == 0 or self.wonder_guard_ability_defender() == 0:
+            return True
+        if self.move_name != "thousand-arrows" and (self.levitate_ability_defender() == 0 or self.eelevate_ability_defender() == 0 or self.air_balloon_item_defender()[0] == 0):
+            return True
+        for absorb_ability in (self.flash_fire_ability_defender, self.well_baked_body_ability_defender, self.water_absorb_ability_defender, self.storm_drain_ability_defender,
+                               self.dry_skin_ability_defender, self.volt_absorb_ability_defender, self.lightning_rod_ability_defender, self.motor_drive_ability_defender,
+                               self.sap_sipper_ability_defender, self.earth_eater_ability_defender, self.wind_rider_ability_defender):
+            if absorb_ability()[0] == 0:
+                return True
+        if self.soundproof_ability_defender() == 0 or self.bulletproof_ability_defender() == 0:
+            return True
+        if self.queenly_majesty_ability_defender() or self.dazzling_ability_defender() or self.armor_tail_ability_defender():
+            return True
+        return self.terrain_blocks_priority_defender()

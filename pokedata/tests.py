@@ -400,3 +400,73 @@ class TypeEffectivenessTests(TestCase):
         full_hp = calc.defender_stats["hp"]
         self.assertEqual(calc.final_type_effectiveness(full_hp), 0.5)
         self.assertEqual(calc.final_type_effectiveness(full_hp - 1), 2)
+
+class MoveBlockedTests(TestCase):
+    fixtures = ["pokedata"]
+
+    # A normal hit isn't blocked.
+    def test_not_blocked(self):
+        self.assertFalse(make_calc("machamp", "snorlax", "close-combat").move_blocked())
+
+    # Levitate and Air Balloon block Ground moves, but Thousand Arrows still hits.
+    def test_levitate_and_air_balloon(self):
+        self.assertTrue(make_calc("garchomp", "bronzong", "earthquake", defender_ability="levitate").move_blocked())
+        self.assertTrue(make_calc("garchomp", "heatran", "earthquake", defender_item="air-balloon").move_blocked())
+        self.assertFalse(make_calc("garchomp", "bronzong", "thousand-arrows", defender_ability="levitate").move_blocked())
+
+    # Abilities that absorb a type block moves of that type.
+    def test_absorb_abilities(self):
+        for move, ability in (("flamethrower", "flash-fire"), ("flamethrower", "well-baked-body"), ("surf", "water-absorb"), ("surf", "storm-drain"), ("surf", "dry-skin"),
+                              ("thunderbolt", "volt-absorb"), ("thunderbolt", "lightning-rod"), ("thunderbolt", "motor-drive"), ("energy-ball", "sap-sipper"),
+                              ("earthquake", "earth-eater"), ("hurricane", "wind-rider")):
+            self.assertTrue(make_calc("mew", "snorlax", move, defender_ability=ability).move_blocked(), f"{ability} should block {move}")
+
+    # Soundproof blocks sound moves and Bulletproof blocks ball and bomb moves.
+    def test_soundproof_and_bulletproof(self):
+        self.assertTrue(make_calc("mew", "snorlax", "boomburst", defender_ability="soundproof").move_blocked())
+        self.assertTrue(make_calc("mew", "snorlax", "shadow-ball", defender_ability="bulletproof").move_blocked())
+
+    # Wonder Guard only lets super-effective moves hit.
+    def test_wonder_guard(self):
+        self.assertFalse(make_calc("charizard", "shedinja", "flamethrower", defender_ability="wonder-guard").move_blocked())
+        self.assertTrue(make_calc("scizor", "shedinja", "x-scissor", defender_ability="wonder-guard").move_blocked())
+
+    # Queenly Majesty, Dazzling and Armor Tail block priority moves only.
+    def test_priority_blockers(self):
+        for ability in ("queenly-majesty", "dazzling", "armor-tail"):
+            self.assertTrue(make_calc("snorlax", "machamp", "quick-attack", defender_ability=ability).move_blocked())
+        self.assertFalse(make_calc("snorlax", "machamp", "tackle", defender_ability="queenly-majesty").move_blocked())
+
+    # Psychic Terrain blocks priority moves on Pokémon that are on the ground.
+    def test_psychic_terrain(self):
+        grounded = DamageCalculator(Species.objects.get(name="snorlax"), Species.objects.get(name="machamp"), "normal", 40, "quick-attack", None, None, terrain="psychic-terrain")
+        flying = DamageCalculator(Species.objects.get(name="snorlax"), Species.objects.get(name="pelipper"), "normal", 40, "quick-attack", None, None, terrain="psychic-terrain")
+        self.assertTrue(grounded.move_blocked())
+        self.assertFalse(flying.move_blocked())
+
+    # Heavy rain stops Fire moves and extreme sun stops Water moves. Regular sun doesn't stop anything.
+    def test_primal_weather(self):
+        self.assertTrue(make_calc("charizard", "snorlax", "flamethrower", weather="heavy-rain").move_blocked())
+        self.assertTrue(make_calc("blastoise", "snorlax", "surf", weather="extreme-sun").move_blocked())
+        self.assertFalse(make_calc("blastoise", "snorlax", "surf", weather="sun").move_blocked())
+
+    # Poltergeist needs the target to hold an item, Dream Eater needs it asleep and Steel Roller needs terrain.
+    def test_moves_that_need_something(self):
+        self.assertTrue(make_calc("gengar", "machamp", "poltergeist").move_blocked())
+        self.assertFalse(make_calc("gengar", "machamp", "poltergeist", defender_item="leftovers").move_blocked())
+        awake = DamageCalculator(Species.objects.get(name="gengar"), Species.objects.get(name="machamp"), "psychic", 100, "dream-eater", None, None)
+        asleep = DamageCalculator(Species.objects.get(name="gengar"), Species.objects.get(name="machamp"), "psychic", 100, "dream-eater", None, "sleep")
+        self.assertTrue(awake.move_blocked())
+        self.assertFalse(asleep.move_blocked())
+        self.assertTrue(make_calc("melmetal", "machamp", "steel-roller").move_blocked())
+
+    # Synchronoise needs a shared type, Burn Up needs a Fire-type user, Double Shock needs an Electric-type user, and Sky Drop can't lift Flying types or anything 200 kg or heavier.
+    def test_moves_that_need_types_or_weight(self):
+        self.assertTrue(make_calc("alakazam", "machamp", "synchronoise").move_blocked())
+        self.assertFalse(make_calc("alakazam", "espeon", "synchronoise").move_blocked())
+        self.assertTrue(make_calc("snorlax", "machamp", "burn-up").move_blocked())
+        self.assertFalse(make_calc("charizard", "machamp", "burn-up").move_blocked())
+        self.assertTrue(make_calc("snorlax", "machamp", "double-shock").move_blocked())
+        self.assertTrue(make_calc("charizard", "pelipper", "sky-drop").move_blocked())
+        self.assertTrue(make_calc("charizard", "snorlax", "sky-drop").move_blocked())
+        self.assertFalse(make_calc("charizard", "machamp", "sky-drop").move_blocked())
