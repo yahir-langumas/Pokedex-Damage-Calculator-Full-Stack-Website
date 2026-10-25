@@ -651,3 +651,178 @@ class VariablePowerTests(TestCase):
         self.assertEqual(self.power(make_calc("umbreon", "machamp", "payback"), attacker_speed=50, defender_speed=100), 100)
         self.assertEqual(self.power(make_calc("umbreon", "machamp", "payback"), attacker_speed=150, defender_speed=100), 50)
         self.assertEqual(self.power(make_calc("dracozolt", "machamp", "bolt-beak"), attacker_speed=150, defender_speed=100), 170)
+
+class HitCountTests(TestCase):
+    fixtures = ["pokedata"]
+
+    # Most moves only hit once.
+    def test_single_hit(self):
+        self.assertEqual(make_calc("snorlax", "machamp", "tackle").damage_calc_hits(), 1)
+
+    # Moves like Double Kick always hit the same number of times.
+    def test_fixed_hits(self):
+        self.assertEqual(make_calc("machamp", "snorlax", "double-kick").damage_calc_hits(), 2)
+
+    # 2-5 hit moves count as 3 hits.
+    def test_two_to_five_hits(self):
+        self.assertEqual(make_calc("cinccino", "snorlax", "bullet-seed").damage_calc_hits(), 3)
+
+    # Skill Link makes 2-5 hit moves always hit 5 times.
+    def test_skill_link(self):
+        self.assertEqual(make_calc("cinccino", "snorlax", "bullet-seed", attacker_ability="skill-link").damage_calc_hits(), 5)
+
+    # Skill Link doesn't change moves that already hit a set number of times.
+    def test_skill_link_fixed_hits(self):
+        self.assertEqual(make_calc("machamp", "snorlax", "double-kick", attacker_ability="skill-link").damage_calc_hits(), 2)
+
+    # Loaded Dice makes 2-5 hit moves count as 4 hits, but does nothing for single hit moves.
+    def test_loaded_dice(self):
+        self.assertEqual(make_calc("cinccino", "snorlax", "bullet-seed", attacker_item="loaded-dice").damage_calc_hits(), 4)
+        self.assertEqual(make_calc("snorlax", "machamp", "tackle", attacker_item="loaded-dice").damage_calc_hits(), 1)
+
+    # Klutz stops Loaded Dice from working.
+    def test_klutz_loaded_dice(self):
+        self.assertEqual(make_calc("lopunny", "snorlax", "bullet-seed", attacker_ability="klutz", attacker_item="loaded-dice").damage_calc_hits(), 3)
+
+    # Newer moves PokeAPI is missing hit counts for.
+    def test_missing_hit_counts(self):
+        self.assertEqual(make_calc("maushold-family-of-four", "snorlax", "population-bomb").damage_calc_hits(), 10)
+        self.assertEqual(make_calc("dondozo", "snorlax", "triple-dive").damage_calc_hits(), 3)
+        self.assertEqual(make_calc("espeon", "snorlax", "twin-beam").damage_calc_hits(), 2)
+
+
+class BasePowerTests(TestCase):
+    fixtures = ["pokedata"]
+
+    # Calls final_base_power as a physical, neutral, non-contact move at full HP unless a test says otherwise.
+    def power(self, calc, physical=True, effectiveness=1, ate_changed=False, moves_last=False, makes_contact=False, attacker_boosts=None, defender_hp=None):
+        defender_hp = calc.defender_stats["hp"] if defender_hp is None else defender_hp
+        return calc.final_base_power(physical, effectiveness, ate_changed, moves_last, makes_contact, attacker_boosts or {}, defender_hp)
+
+    # Regular moves keep their power.
+    def test_regular_move(self):
+        self.assertEqual(self.power(make_calc("snorlax", "machamp", "tackle")), 40)
+
+    # Facade doubles when the user has a status and Brine doubles when the target is at half HP or less.
+    def test_facade_and_brine(self):
+        burned = DamageCalculator(Species.objects.get(name="snorlax"), Species.objects.get(name="machamp"), "normal", 70, "facade", "burn", None)
+        self.assertEqual(self.power(burned), 140)
+        self.assertEqual(self.power(make_calc("snorlax", "machamp", "facade")), 70)
+        self.assertEqual(self.power(make_calc("pelipper", "snorlax", "brine"), physical=False, defender_hp=117), 130)
+        self.assertEqual(self.power(make_calc("pelipper", "snorlax", "brine"), physical=False), 65)
+
+    # Knock Off's 1.5x boost makes 97.5 power, and .5 rounds down.
+    def test_knock_off(self):
+        self.assertEqual(self.power(make_calc("weavile", "snorlax", "knock-off", defender_item="leftovers")), 97)
+        self.assertEqual(self.power(make_calc("weavile", "snorlax", "knock-off")), 65)
+
+    # Solar Beam is halved in rain, but not in sun or with Utility Umbrella.
+    def test_solar_beam(self):
+        self.assertEqual(self.power(make_calc("venusaur", "snorlax", "solar-beam", weather="rain"), physical=False), 60)
+        self.assertEqual(self.power(make_calc("venusaur", "snorlax", "solar-beam", weather="sun"), physical=False), 120)
+        self.assertEqual(self.power(make_calc("venusaur", "snorlax", "solar-beam", attacker_item="utility-umbrella", weather="rain"), physical=False), 120)
+
+    # Collision Course gets 1.33x power when it's super effective.
+    def test_collision_course(self):
+        self.assertEqual(self.power(make_calc("koraidon", "snorlax", "collision-course"), effectiveness=2), 133)
+        self.assertEqual(self.power(make_calc("koraidon", "snorlax", "collision-course")), 100)
+
+    # Electric Terrain boosts Electric moves by 1.3x and Grassy Terrain halves Earthquake.
+    def test_terrain(self):
+        electric = DamageCalculator(Species.objects.get(name="pikachu"), Species.objects.get(name="machamp"), "electric", 90, "thunderbolt", None, None, terrain="electric-terrain")
+        self.assertEqual(self.power(electric, physical=False), 117)
+        grassy = DamageCalculator(Species.objects.get(name="garchomp"), Species.objects.get(name="snorlax"), "ground", 100, "earthquake", None, None, terrain="grassy-terrain")
+        self.assertEqual(self.power(grassy), 50)
+
+    # Technician boosts moves with 60 power or less by 1.5x.
+    def test_technician(self):
+        self.assertEqual(self.power(make_calc("scizor", "snorlax", "bullet-punch", attacker_ability="technician")), 60)
+        self.assertEqual(self.power(make_calc("scizor", "snorlax", "iron-head", attacker_ability="technician")), 80)
+
+    # Iron Fist boosts punches by 1.2x, Strong Jaw boosts bites by 1.5x and Sheer Force boosts moves with added effects by 1.3x.
+    def test_boosting_abilities(self):
+        self.assertEqual(self.power(make_calc("hitmonchan", "snorlax", "mach-punch", attacker_ability="iron-fist")), 48)
+        self.assertEqual(self.power(make_calc("feraligatr", "snorlax", "crunch", attacker_ability="strong-jaw")), 120)
+        self.assertEqual(self.power(make_calc("nidoking", "machamp", "flamethrower", attacker_ability="sheer-force"), physical=False), 117)
+
+    # Tough Claws boosts contact moves by 1.3x and -ate abilities boost the moves they change by 1.2x.
+    def test_tough_claws_and_ate(self):
+        self.assertEqual(self.power(make_calc("barbaracle", "snorlax", "tackle", attacker_ability="tough-claws"), makes_contact=True), 52)
+        self.assertEqual(self.power(make_calc("barbaracle", "snorlax", "tackle", attacker_ability="tough-claws")), 40)
+        self.assertEqual(self.power(make_calc("sylveon", "snorlax", "hyper-voice"), physical=False, ate_changed=True), 108)
+
+    # Type boosting items give 1.2x, Gems give 1.3x, Muscle Band boosts physical moves and Wise Glasses boosts special moves.
+    def test_items(self):
+        self.assertEqual(self.power(make_calc("charizard", "machamp", "flamethrower", attacker_item="charcoal"), physical=False), 108)
+        self.assertEqual(self.power(make_calc("charizard", "machamp", "flamethrower", attacker_item="fire-gem"), physical=False), 117)
+        self.assertEqual(self.power(make_calc("snorlax", "machamp", "tackle", attacker_item="muscle-band")), 44)
+        self.assertEqual(self.power(make_calc("snorlax", "machamp", "tackle", attacker_item="wise-glasses")), 40)
+        self.assertEqual(self.power(make_calc("charizard", "machamp", "flamethrower", attacker_item="wise-glasses"), physical=False), 99)
+
+    # Abilities and items stack. Technician and Metal Coat on Bullet Punch is 40 x 1.5 x 1.2.
+    def test_modifiers_stack(self):
+        self.assertEqual(self.power(make_calc("scizor", "snorlax", "bullet-punch", attacker_ability="technician", attacker_item="metal-coat")), 72)
+
+
+class AttackStatTests(TestCase):
+    fixtures = ["pokedata"]
+
+    # Calls final_attack as a physical, non-crit move at full HP with no stat stages unless a test says otherwise.
+    def attack(self, calc, physical=True, critical_hit=False, attacker_boosts=None, defender_boosts=None, attacker_hp=None):
+        attacker_hp = calc.attacker_stats["hp"] if attacker_hp is None else attacker_hp
+        return calc.final_attack(physical, critical_hit, attacker_boosts or {}, defender_boosts or {}, attacker_hp)
+
+    # Physical moves use Attack and special moves use Sp. Atk.
+    def test_attack_and_special_attack(self):
+        self.assertEqual(self.attack(make_calc("garchomp", "machamp", "earthquake")), 150)
+        self.assertEqual(self.attack(make_calc("garchomp", "machamp", "draco-meteor"), physical=False), 100)
+
+    # Stat stages raise or lower the stat. +2 doubles it and -1 makes it 2/3.
+    def test_stat_stages(self):
+        self.assertEqual(self.attack(make_calc("garchomp", "machamp", "earthquake"), attacker_boosts={"attack": 2}), 300)
+        self.assertEqual(self.attack(make_calc("garchomp", "machamp", "earthquake"), attacker_boosts={"attack": -1}), 100)
+
+    # Crits ignore the attacker's stat drops but keep its boosts.
+    def test_critical_hit(self):
+        self.assertEqual(self.attack(make_calc("garchomp", "machamp", "earthquake"), critical_hit=True, attacker_boosts={"attack": -1}), 150)
+        self.assertEqual(self.attack(make_calc("garchomp", "machamp", "earthquake"), critical_hit=True, attacker_boosts={"attack": 1}), 225)
+
+    # Unaware ignores the attacker's stat boosts.
+    def test_unaware(self):
+        self.assertEqual(self.attack(make_calc("garchomp", "machamp", "earthquake", defender_ability="unaware"), attacker_boosts={"attack": 2}), 150)
+
+    # Foul Play uses the target's Attack and the target's stat stages.
+    def test_foul_play(self):
+        self.assertEqual(self.attack(make_calc("umbreon", "garchomp", "foul-play")), 150)
+        self.assertEqual(self.attack(make_calc("umbreon", "garchomp", "foul-play"), defender_boosts={"attack": 1}), 225)
+        self.assertEqual(self.attack(make_calc("umbreon", "garchomp", "foul-play"), attacker_boosts={"attack": 2}), 150)
+
+    # Body Press uses the user's Defense and Defense stages.
+    def test_body_press(self):
+        self.assertEqual(self.attack(make_calc("snorlax", "machamp", "body-press")), 85)
+        self.assertEqual(self.attack(make_calc("snorlax", "machamp", "body-press"), attacker_boosts={"defense": 1}), 127)
+
+    # Huge Power doubles Attack. Hustle boosts Attack by 1.5x but not Sp. Atk.
+    def test_huge_power_and_hustle(self):
+        self.assertEqual(self.attack(make_calc("azumarill", "machamp", "aqua-tail", attacker_ability="huge-power")), 140)
+        self.assertEqual(self.attack(make_calc("garchomp", "machamp", "earthquake", attacker_ability="hustle")), 225)
+        self.assertEqual(self.attack(make_calc("garchomp", "machamp", "draco-meteor", attacker_ability="hustle"), physical=False), 100)
+
+    # Choice Band and Choice Specs give 1.5x. Light Ball doubles Pikachu's Attack and Sp. Atk.
+    def test_choice_items_and_light_ball(self):
+        self.assertEqual(self.attack(make_calc("garchomp", "machamp", "earthquake", attacker_item="choice-band")), 225)
+        self.assertEqual(self.attack(make_calc("garchomp", "machamp", "draco-meteor", attacker_item="choice-specs"), physical=False), 150)
+        self.assertEqual(self.attack(make_calc("pikachu", "machamp", "volt-tackle", attacker_item="light-ball")), 150)
+        self.assertEqual(self.attack(make_calc("pikachu", "machamp", "thunderbolt", attacker_item="light-ball"), physical=False), 140)
+
+    # Blaze boosts Fire moves by 1.5x at 1/3 HP or less. 193.5 rounds down to 193.
+    def test_blaze(self):
+        calc = make_calc("charizard", "machamp", "flamethrower", attacker_ability="blaze")
+        third = calc.attacker_stats["hp"] // 3
+        self.assertEqual(self.attack(calc, physical=False, attacker_hp=third), 193)
+        self.assertEqual(self.attack(calc, physical=False, attacker_hp=third + 1), 129)
+
+    # Thick Fat halves Fire and Ice moves and Tablets of Ruin lowers the attacker's Attack to 0.75x.
+    def test_defender_abilities(self):
+        self.assertEqual(self.attack(make_calc("charizard", "snorlax", "flamethrower", defender_ability="thick-fat"), physical=False), 64)
+        self.assertEqual(self.attack(make_calc("garchomp", "machamp", "earthquake", defender_ability="tablets-of-ruin")), 112)

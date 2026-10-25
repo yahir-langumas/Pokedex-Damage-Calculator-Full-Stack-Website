@@ -7423,3 +7423,113 @@ class DamageCalculator:
                    or (name == "payback" and attacker_speed <= defender_speed)
                    or (name in ("bolt-beak", "fishious-rend") and attacker_speed > defender_speed))
         return power * 2 if doubled else power
+
+    # How many times the move hits. 2-5 hit moves count as 3 hits (4 with Loaded Dice, 5 with Skill Link), same as Smogon's calc. This is done for simplicity sake. 
+    def damage_calc_hits(self):
+        meta = self.move_data.meta or {}
+        min_hits = meta.get("min_hits") or MISSING_HIT_COUNTS.get(self.move_name, 1)
+        max_hits = meta.get("max_hits") or MISSING_HIT_COUNTS.get(self.move_name, 1)
+        if min_hits == max_hits or "skill-link" in self.attacker_abilities:
+            return max_hits
+        if self.held_item_attacker() == "loaded-dice":
+            return 4
+        return 3
+
+    # The move's power after every ability, item, terrain and move effect that changes it. Same order as the games.
+    def final_base_power(self, physical, effectiveness, ate_changed, moves_last, makes_contact, attacker_boosts, defender_hp):
+        name = self.move_name
+        power = self.move_power
+        modifiers = []
+        # Moves that get stronger in certain situations.
+        if ((name == "facade" and self.status_attacker in ("burn", "paralysis", "poison", "badly-poison"))
+                or (name == "brine" and defender_hp <= self.defender_stats["hp"] / 2)
+                or (name == "venoshock" and self.status_defender in ("poison", "badly-poison"))):
+            modifiers.append(8192)
+        elif name == "expanding-force" and self.grounded_attacker() and self.terrain == "psychic-terrain":
+            modifiers.append(6144)
+        elif (name == "knock-off" and self.knock_off_boost()) or (name == "misty-explosion" and self.grounded_attacker() and self.terrain == "misty-terrain"):
+            modifiers.append(6144)
+        elif name in ("solar-beam", "solar-blade") and self.utility_umbrella_item_attacker() in ("rain", "heavy-rain", "sandstorm", "snow", "hail"):
+            modifiers.append(2048)
+        elif name in ("collision-course", "electro-drift") and effectiveness > 1:
+            modifiers.append(5461)
+        # Terrain boosts or weakens the move.
+        modifiers.append(modifier_from(self.terrain_move_power(), power))
+        # Abilities that boost certain kinds of moves by 50%.
+        for new_power in (self.technician_ability_attacker(), self.mega_launcher_ability_attacker(), self.strong_jaw_ability_attacker(), self.steely_spirit_ability_attacker(), self.sharpness_ability_attacker()):
+            modifiers.append(modifier_from(new_power, power))
+        if physical:
+            modifiers.append(modifier_from(self.toxic_boost_ability_attacker(), self.attacker_stats["attack"]))
+        else:
+            modifiers.append(modifier_from(self.flare_boost_ability_attacker(), self.attacker_stats["special-attack"]))
+        modifiers.append(modifier_from(self.dark_aura_ability(), power))
+        modifiers.append(modifier_from(self.fairy_aura_ability(), power))
+        # Abilities that boost certain kinds of moves by 30%.
+        for new_power in (self.sheer_force_ability_attacker(), self.sand_force_ability_attacker(), self.analytic_ability_attacker(moves_last), self.punk_rock_power_attacker()):
+            modifiers.append(modifier_from(new_power, power))
+        # Tough Claws goes by whether the move ends up making contact (Punching Glove, Long Reach and Shell Side Arm can change it).
+        if makes_contact and "tough-claws" in self.attacker_abilities:
+            modifiers.append(5325)
+        if ate_changed:
+            modifiers.append(4915)
+        for new_power in (self.reckless_ability_attacker(), self.iron_fist_ability_attacker()):
+            modifiers.append(modifier_from(new_power, power))
+        modifiers.append(modifier_from(self.dry_skin_ability_defender()[0], power))
+        # Items that boost the move's power.
+        for new_power in (self.gem_item_attacker(), self.adamant_orb_item_attacker(), self.lustrous_orb_item_attacker(), self.griseous_orb_item_attacker(), self.soul_dew_item_attacker(),
+                          self.type_boost_item_attacker(), self.plate_item_attacker(), self.ogerpon_mask_item_attacker(), self.punching_glove_item_attacker()[0]):
+            modifiers.append(modifier_from(new_power, power))
+        # Muscle Band and Wise Glasses go by the category the move ends up using (Photon Geyser and Shell Side Arm can switch).
+        if (physical and self.held_item_attacker() == "muscle-band") or (not physical and self.held_item_attacker() == "wise-glasses"):
+            modifiers.append(4505)
+        return max(1, poke_round(power * chain_modifiers(modifiers, 41, 2097152) / 4096))
+
+    # The attacking stat after stat stages and modifiers. Foul Play uses the target's Attack and Body Press uses Defense.
+    def final_attack(self, physical, critical_hit, attacker_boosts, defender_boosts, attacker_hp):
+        if self.move_name == "foul-play":
+            attack, stage = self.defender_stats["attack"], defender_boosts.get("attack", 0)
+        elif self.move_name == "body-press":
+            attack, stage = self.attacker_stats["defense"], attacker_boosts.get("defense", 0)
+        else:
+            stat = "attack" if physical else "special-attack"
+            attack, stage = self.attacker_stats[stat], attacker_boosts.get(stat, 0)
+        # Crits ignore the attacker's stat drops, and Unaware ignores all of its stat changes.
+        if stage != 0 and not (critical_hit and stage < 0) and "unaware" not in self.defender_abilities:
+            attack = apply_stage(attack, stage)
+        if physical and self.hustle_ability_attacker() != self.attacker_stats["attack"]:
+            attack = poke_round(attack * 3 / 2)
+        power = self.move_power
+        stat = "attack" if physical else "special-attack"
+        base_stat = self.attacker_stats[stat]
+        modifiers = []
+        # The attacker's abilities.
+        modifiers.append(modifier_from(self.defeatist_ability_attacker(attacker_hp, self.attacker_stats["hp"])[0], self.attacker_stats["attack"]))
+        if physical:
+            for new_stat in (self.flower_gift_ability_attacker()[0], self.gorilla_tactics_ability_attacker(), self.guts_ability_attacker(), self.huge_power_ability_attacker(), self.pure_power_ability_attacker(), self.orichalcum_pulse_attack_attacker()):
+                modifiers.append(modifier_from(new_stat, base_stat))
+        else:
+            for new_stat in (self.solar_power_ability_attacker(), self.hadron_engine_special_attack_attacker()):
+                modifiers.append(modifier_from(new_stat, base_stat))
+        for pinch_ability in (self.overgrow_ability_attacker, self.blaze_ability_attacker, self.torrent_ability_attacker, self.swarm_ability_attacker):
+            modifiers.append(modifier_from(pinch_ability(attacker_hp, self.attacker_stats["hp"]), power))
+        for new_power in (self.steelworker_ability_attacker(), self.dragons_maw_ability_attacker(), self.rocky_payload_ability_attacker(), self.fire_mane_ability_attacker(), self.transistor_ability_attacker(), self.water_bubble_power_attacker()):
+            modifiers.append(modifier_from(new_power, power))
+        # The defender's abilities that weaken the attacker's attacking stat.
+        for new_power in (self.thick_fat_ability_defender(), self.water_bubble_ability_defender(), self.purifying_salt_ability_defender(), self.heatproof_ability_defender()):
+            modifiers.append(modifier_from(new_power, power))
+        if physical:
+            modifiers.append(modifier_from(self.tablets_of_ruin_ability_defender(), base_stat))
+        else:
+            modifiers.append(modifier_from(self.vessel_of_ruin_ability_defender(), base_stat))
+        # Protosynthesis and Quark Drive boost the attacker's highest stat by 30%.
+        if self.paradox_boosted_stat_attacker(attacker_boosts) == stat:
+            modifiers.append(5325)
+        # The attacker's items.
+        light_ball = self.light_ball_item_attacker()
+        if physical:
+            for new_stat in (self.thick_club_item_attacker(), light_ball[0], self.choice_band_item_attacker()):
+                modifiers.append(modifier_from(new_stat, base_stat))
+        else:
+            for new_stat in (self.deep_sea_tooth_item_attacker(), light_ball[1], self.choice_specs_item_attacker()):
+                modifiers.append(modifier_from(new_stat, base_stat))
+        return max(1, poke_round(attack * chain_modifiers(modifiers, 410, 131072) / 4096))
