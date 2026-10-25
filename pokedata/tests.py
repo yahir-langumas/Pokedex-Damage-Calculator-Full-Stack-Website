@@ -351,3 +351,52 @@ class MoveTypeTests(TestCase):
     # A move with nothing changing it keeps its type.
     def test_no_change(self):
         self.assertEqual(make_calc("gengar", "snorlax", "shadow-ball").final_move_type(), ("ghost", False))
+class TypeEffectivenessTests(TestCase):
+    fixtures = ["pokedata"]
+
+    # Fire is super effective on Grass.
+    def test_super_effective(self):
+        self.assertEqual(make_calc("charizard", "venusaur", "flamethrower").final_type_effectiveness(155), 2)
+
+    # Normal moves can't hit Ghost types.
+    def test_immune(self):
+        self.assertEqual(make_calc("snorlax", "gengar", "tackle").final_type_effectiveness(120), 0)
+
+    # Scrappy lets Normal moves hit Ghost types. Normal is neutral on Gengar's Poison type.
+    def test_scrappy(self):
+        self.assertEqual(make_calc("kangaskhan", "gengar", "tackle", attacker_ability="scrappy").final_type_effectiveness(120), 1)
+
+    # Mind's Eye lets Fighting moves hit Ghost types. Fighting is resisted by Gengar's Poison type.
+    def test_minds_eye(self):
+        self.assertEqual(make_calc("machamp", "gengar", "close-combat", attacker_ability="minds-eye").final_type_effectiveness(120), 0.5)
+
+    # Freeze-Dry is super effective on Water types.
+    def test_freeze_dry(self):
+        self.assertEqual(make_calc("lapras", "vaporeon", "freeze-dry").final_type_effectiveness(205), 2)
+        self.assertEqual(make_calc("lapras", "gyarados", "freeze-dry").final_type_effectiveness(170), 4)
+
+    # Flying Press counts as Fighting and Flying. Both are super effective on Breloom.
+    def test_flying_press(self):
+        self.assertEqual(make_calc("hawlucha", "breloom", "flying-press").final_type_effectiveness(135), 4)
+
+    # Ring Target removes immunities, so Normal moves hit Gengar for neutral dmg.
+    def test_ring_target(self):
+        self.assertEqual(make_calc("snorlax", "gengar", "tackle", defender_item="ring-target").final_type_effectiveness(120), 1)
+
+    # Iron Ball and Thousand Arrows let Ground moves hit Flying types for neutral dmg.
+    def test_iron_ball_and_thousand_arrows(self):
+        self.assertEqual(make_calc("garchomp", "charizard", "earthquake").final_type_effectiveness(153), 0)
+        self.assertEqual(make_calc("garchomp", "charizard", "earthquake", defender_item="iron-ball").final_type_effectiveness(153), 1)
+        self.assertEqual(make_calc("garchomp", "charizard", "thousand-arrows").final_type_effectiveness(153), 1)
+
+    # Strong winds take away the Flying type's weaknesses, so Electric only hits Gyarados 2x instead of 4x.
+    def test_strong_winds(self):
+        self.assertEqual(make_calc("pikachu", "gyarados", "thunderbolt").final_type_effectiveness(170), 4)
+        self.assertEqual(make_calc("pikachu", "gyarados", "thunderbolt", weather="strong-winds").final_type_effectiveness(170), 2)
+
+    # Tera Shell makes every hit not very effective while Terapagos is at full HP.
+    def test_tera_shell(self):
+        calc = make_calc("machamp", "terapagos", "close-combat", defender_ability="tera-shell")
+        full_hp = calc.defender_stats["hp"]
+        self.assertEqual(calc.final_type_effectiveness(full_hp), 0.5)
+        self.assertEqual(calc.final_type_effectiveness(full_hp - 1), 2)

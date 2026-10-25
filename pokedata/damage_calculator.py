@@ -7279,3 +7279,31 @@ class DamageCalculator:
                 return move_type, True
         return self.liquid_voice_ability_attacker(), False
     
+    def final_type_effectiveness(self, defender_hp):
+        if self.move_name == "struggle":
+            return 1
+        if "scrappy" in self.attacker_abilities:
+            effectiveness = self.scrappy_ability_attacker()
+        elif "minds-eye" in self.attacker_abilities:
+            effectiveness = self.minds_eye_ability_attacker()
+        else:
+            effectiveness = self.type_effectiveness_defender()
+        if self.move_name == "freeze-dry" and "water" in self.defender.types:
+            effectiveness *= 4
+        if self.move_name == "flying-press":
+            for type_data in self.defender_types_data:
+                if "flying" in type_data["double_damage_from"]:
+                    effectiveness *= 2
+                elif "flying" in type_data["half_damage_from"]:
+                    effectiveness *= 0.5
+                elif "flying" in type_data["no_damage_from"]:
+                    effectiveness *= 0
+        if effectiveness == 0:
+            effectiveness = self.ring_target_item_defender()
+        if effectiveness == 0 and self.move_type == "ground":
+            effectiveness = self.iron_ball_ground_item_defender()
+        if effectiveness == 0 and self.move_name == "thousand-arrows":
+            effectiveness = 1
+        if effectiveness > 0 and "tera-shell" in self.defender_abilities and self.tera_shell_ability_defender(defender_hp, self.defender_stats["hp"]) == 0.5:
+            effectiveness = 0.5
+        return effectiveness
