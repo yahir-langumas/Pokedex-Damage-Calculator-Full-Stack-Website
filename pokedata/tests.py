@@ -518,3 +518,136 @@ class FixedDamageTests(TestCase):
     # Regular moves don't do set dmg.
     def test_regular_move(self):
         self.assertIsNone(make_calc("snorlax", "machamp", "tackle").fixed_damage(235, 165))
+
+
+class KnockOffTests(TestCase):
+    fixtures = ["pokedata"]
+
+    # Knock Off gets its boost when the target is holding an item.
+    def test_has_item(self):
+        self.assertTrue(make_calc("weavile", "snorlax", "knock-off", defender_item="leftovers").knock_off_boost())
+
+    # No item means no boost.
+    def test_no_item(self):
+        self.assertFalse(make_calc("weavile", "snorlax", "knock-off").knock_off_boost())
+
+    # Groudon's Red Orb can't be knocked off, but anyone else's can.
+    def test_primal_orbs(self):
+        self.assertFalse(make_calc("weavile", "groudon", "knock-off", defender_item="red-orb").knock_off_boost())
+        self.assertTrue(make_calc("weavile", "snorlax", "knock-off", defender_item="red-orb").knock_off_boost())
+
+    # Arceus's Plates and Silvally's Memories can't be knocked off.
+    def test_arceus_and_silvally(self):
+        self.assertFalse(make_calc("weavile", "arceus", "knock-off", defender_item="flame-plate").knock_off_boost())
+        self.assertTrue(make_calc("weavile", "snorlax", "knock-off", defender_item="flame-plate").knock_off_boost())
+        self.assertFalse(make_calc("weavile", "silvally", "knock-off", defender_item="fire-memory").knock_off_boost())
+
+    # Genesect's Drives can't be knocked off.
+    def test_genesect_drives(self):
+        self.assertFalse(make_calc("weavile", "genesect", "knock-off", defender_item="douse-drive").knock_off_boost())
+        self.assertTrue(make_calc("weavile", "snorlax", "knock-off", defender_item="douse-drive").knock_off_boost())
+
+    # The Origin Forme items and Ogerpon's masks can't be knocked off.
+    def test_origin_items_and_masks(self):
+        self.assertFalse(make_calc("weavile", "dialga", "knock-off", defender_item="adamant-crystal").knock_off_boost())
+        self.assertFalse(make_calc("weavile", "ogerpon", "knock-off", defender_item="wellspring-mask").knock_off_boost())
+
+    # Booster Energy can't be knocked off a Pokémon with Protosynthesis or Quark Drive.
+    def test_booster_energy(self):
+        self.assertFalse(make_calc("weavile", "great-tusk", "knock-off", defender_ability="protosynthesis", defender_item="booster-energy").knock_off_boost())
+        self.assertTrue(make_calc("weavile", "snorlax", "knock-off", defender_item="booster-energy").knock_off_boost())
+
+
+class VariablePowerTests(TestCase):
+    fixtures = ["pokedata"]
+
+    # Calls variable_move_power with full HP, no stat stages and equal Speed unless a test says otherwise.
+    def power(self, calc, attacker_hp=None, defender_hp=None, attacker_boosts=None, defender_boosts=None, attacker_speed=100, defender_speed=100):
+        attacker_hp = calc.attacker_stats["hp"] if attacker_hp is None else attacker_hp
+        defender_hp = calc.defender_stats["hp"] if defender_hp is None else defender_hp
+        return calc.variable_move_power(attacker_hp, defender_hp, attacker_boosts or {}, defender_boosts or {}, attacker_speed, defender_speed)
+
+    # Regular moves keep their power.
+    def test_regular_move(self):
+        self.assertEqual(self.power(make_calc("snorlax", "machamp", "tackle")), 40)
+
+    # Moves that do set dmg have no power.
+    def test_set_damage_move(self):
+        self.assertIsNone(self.power(make_calc("machamp", "snorlax", "seismic-toss")))
+
+    # Low Kick gets stronger the heavier the target is. Float Stone and Heavy Metal change the target's weight.
+    def test_low_kick(self):
+        self.assertEqual(self.power(make_calc("machamp", "snorlax", "low-kick")), 120)
+        self.assertEqual(self.power(make_calc("machamp", "machamp", "low-kick")), 100)
+        self.assertEqual(self.power(make_calc("machamp", "pikachu", "low-kick")), 20)
+        self.assertEqual(self.power(make_calc("machamp", "machamp", "low-kick", defender_item="float-stone")), 80)
+        self.assertEqual(self.power(make_calc("machamp", "machamp", "low-kick", defender_ability="heavy-metal")), 120)
+
+    # Heavy Slam gets stronger the heavier the user is compared to the target.
+    def test_heavy_slam(self):
+        self.assertEqual(self.power(make_calc("snorlax", "pikachu", "heavy-slam")), 120)
+        self.assertEqual(self.power(make_calc("snorlax", "machamp", "heavy-slam")), 80)
+        self.assertEqual(self.power(make_calc("snorlax", "snorlax", "heavy-slam")), 40)
+
+    # Gyro Ball is stronger when the user is slower. Electro Ball is stronger when the user is faster.
+    def test_speed_moves(self):
+        self.assertEqual(self.power(make_calc("ferrothorn", "machamp", "gyro-ball"), attacker_speed=30, defender_speed=200), 150)
+        self.assertEqual(self.power(make_calc("ferrothorn", "machamp", "gyro-ball")), 26)
+        self.assertEqual(self.power(make_calc("pikachu", "machamp", "electro-ball"), attacker_speed=200, defender_speed=50), 150)
+        self.assertEqual(self.power(make_calc("pikachu", "machamp", "electro-ball")), 60)
+        self.assertEqual(self.power(make_calc("pikachu", "machamp", "electro-ball"), attacker_speed=50, defender_speed=100), 40)
+
+    # Eruption gets weaker as the user loses HP.
+    def test_eruption(self):
+        calc = make_calc("typhlosion", "snorlax", "eruption")
+        max_hp = calc.attacker_stats["hp"]
+        self.assertEqual(self.power(calc), 150)
+        self.assertEqual(self.power(calc, attacker_hp=max_hp // 2), 74)
+        self.assertEqual(self.power(calc, attacker_hp=1), 1)
+
+    # Flail gets stronger as the user loses HP.
+    def test_flail(self):
+        calc = make_calc("magikarp", "snorlax", "flail")
+        self.assertEqual(self.power(calc, attacker_hp=1), 200)
+        self.assertEqual(self.power(calc), 20)
+
+    # Crush Grip and Hard Press get weaker as the target loses HP.
+    def test_crush_grip_and_hard_press(self):
+        crush_grip = make_calc("regigigas", "pikachu", "crush-grip")
+        self.assertEqual(self.power(crush_grip), 120)
+        self.assertEqual(self.power(crush_grip, defender_hp=crush_grip.defender_stats["hp"] // 2), 60)
+        self.assertEqual(self.power(make_calc("regigigas", "snorlax", "hard-press")), 100)
+
+    # Stored Power counts the user's stat boosts and Punishment counts the target's. Drops don't count.
+    def test_stat_stage_moves(self):
+        self.assertEqual(self.power(make_calc("espeon", "snorlax", "stored-power"), attacker_boosts={"attack": 2, "speed": 1}), 80)
+        self.assertEqual(self.power(make_calc("espeon", "snorlax", "stored-power"), attacker_boosts={"attack": -2}), 20)
+        self.assertEqual(self.power(make_calc("weavile", "snorlax", "punishment"), defender_boosts={"defense": 3}), 120)
+
+    # Return and Frustration have 102 power at max friendship.
+    def test_friendship_moves(self):
+        self.assertEqual(self.power(make_calc("snorlax", "machamp", "return")), 102)
+        self.assertEqual(self.power(make_calc("snorlax", "machamp", "frustration")), 102)
+
+    # Weather Ball doubles in weather (not with Utility Umbrella in rain). Terrain Pulse, Rising Voltage and Psyblade get stronger in terrain.
+    def test_weather_and_terrain(self):
+        self.assertEqual(self.power(make_calc("castform", "snorlax", "weather-ball", weather="rain")), 100)
+        self.assertEqual(self.power(make_calc("pelipper", "snorlax", "weather-ball", attacker_item="utility-umbrella", weather="rain")), 50)
+        self.assertEqual(self.power(make_calc("castform", "snorlax", "weather-ball", weather="strong-winds")), 50)
+        electric = DamageCalculator(Species.objects.get(name="pikachu"), Species.objects.get(name="snorlax"), "electric", 70, "rising-voltage", None, None, terrain="electric-terrain")
+        self.assertEqual(self.power(electric), 140)
+        terrain_pulse = DamageCalculator(Species.objects.get(name="pikachu"), Species.objects.get(name="snorlax"), "normal", 50, "terrain-pulse", None, None, terrain="electric-terrain")
+        self.assertEqual(self.power(terrain_pulse), 100)
+        psyblade = DamageCalculator(Species.objects.get(name="iron-leaves"), Species.objects.get(name="snorlax"), "psychic", 80, "psyblade", None, None, terrain="electric-terrain")
+        self.assertEqual(self.power(psyblade), 120)
+
+    # Hex doubles on a target with a status, Acrobatics doubles with no item, Payback doubles moving last and Bolt Beak doubles moving first.
+    def test_doubled_power(self):
+        burned = DamageCalculator(Species.objects.get(name="gengar"), Species.objects.get(name="machamp"), "ghost", 65, "hex", None, "burn")
+        self.assertEqual(self.power(burned), 130)
+        self.assertEqual(self.power(make_calc("gengar", "machamp", "hex")), 65)
+        self.assertEqual(self.power(make_calc("hawlucha", "machamp", "acrobatics")), 110)
+        self.assertEqual(self.power(make_calc("hawlucha", "machamp", "acrobatics", attacker_item="leftovers")), 55)
+        self.assertEqual(self.power(make_calc("umbreon", "machamp", "payback"), attacker_speed=50, defender_speed=100), 100)
+        self.assertEqual(self.power(make_calc("umbreon", "machamp", "payback"), attacker_speed=150, defender_speed=100), 50)
+        self.assertEqual(self.power(make_calc("dracozolt", "machamp", "bolt-beak"), attacker_speed=150, defender_speed=100), 170)

@@ -7357,3 +7357,69 @@ class DamageCalculator:
                 return 0
             return defender_hp
         return None
+    
+     # Knock Off does 50% more dmg if the target is holding an item it can knock off. Returns True if it gets the boost.
+    def knock_off_boost(self):
+        item = self.defender_item
+        if item is None or UNREMOVABLE_ITEMS.get(item) == self.defender.pokedex_id:
+            return False
+        if (item in PLATE_TYPES and self.defender.pokedex_id == 493) or (item in MEMORY_TYPES and self.defender.pokedex_id == 773):
+            return False
+        if item in ("douse-drive", "shock-drive", "burn-drive", "chill-drive") and self.defender.pokedex_id == 649:
+            return False
+        if item == "booster-energy" and ("protosynthesis" in self.defender_abilities or "quark-drive" in self.defender_abilities):
+            return False
+        return True
+
+    # Works out the power of moves whose power depends on weight, Speed, HP, stat stages, status, items, terrain or weather. Returns the power before modifiers, or None for moves that do set dmg. (This one was quite difficult to figure out :o) 
+    def variable_move_power(self, attacker_hp, defender_hp, attacker_boosts, defender_boosts, attacker_speed, defender_speed):
+        name = self.move_name
+        power = self.move_power
+        attacker_max_hp = self.attacker_stats["hp"]
+        defender_max_hp = self.defender_stats["hp"]
+        if name in ("low-kick", "grass-knot"):
+            weight = self.final_weight_defender() / 10
+            return 120 if weight >= 200 else 100 if weight >= 100 else 80 if weight >= 50 else 60 if weight >= 25 else 40 if weight >= 10 else 20
+        if name in ("heavy-slam", "heat-crash"):
+            ratio = self.final_weight_attacker() / self.final_weight_defender()
+            return 120 if ratio >= 5 else 100 if ratio >= 4 else 80 if ratio >= 3 else 60 if ratio >= 2 else 40
+        if name == "gyro-ball":
+            return min(150, 25 * defender_speed // attacker_speed + 1) if attacker_speed else 1
+        if name == "electro-ball":
+            if not defender_speed:
+                return 40
+            ratio = attacker_speed // defender_speed
+            return 150 if ratio >= 4 else 120 if ratio >= 3 else 80 if ratio >= 2 else 60 if ratio >= 1 else 40
+        if name in ("eruption", "water-spout", "dragon-energy"):
+            return max(1, 150 * attacker_hp // attacker_max_hp)
+        if name in ("flail", "reversal"):
+            portion = 48 * attacker_hp // attacker_max_hp
+            return 200 if portion <= 1 else 150 if portion <= 4 else 100 if portion <= 9 else 80 if portion <= 16 else 40 if portion <= 32 else 20
+        if name in ("crush-grip", "wring-out", "hard-press"):
+            max_power = 100 if name == "hard-press" else 120
+            portion = 100 * (defender_hp * 4096 // defender_max_hp)
+            return (max_power * portion + 2047) // 4096 // 100 or 1
+        if name in ("stored-power", "power-trip"):
+            return 20 + 20 * sum(stage for stage in attacker_boosts.values() if stage > 0)
+        if name == "punishment":
+            return min(200, 60 + 20 * sum(stage for stage in defender_boosts.values() if stage > 0))
+        if name in FRIENDSHIP_MOVES:
+            return 102
+        if name == "weather-ball":
+            return 100 if self.utility_umbrella_item_attacker() not in (None, "strong-winds") else 50
+        if name == "terrain-pulse":
+            return 100 if self.terrain and self.grounded_attacker() else 50
+        if name == "rising-voltage":
+            return 140 if self.terrain == "electric-terrain" and self.grounded_defender() else 70
+        if name == "psyblade":
+            return 120 if self.terrain == "electric-terrain" else 80
+        if power is None:
+            return None
+        doubled = ((name in ("hex", "infernal-parade") and (self.status_defender or "comatose" in self.defender_abilities))
+                   or (name == "barb-barrage" and self.status_defender in ("poison", "badly-poison"))
+                   or (name == "wake-up-slap" and (self.status_defender == "sleep" or "comatose" in self.defender_abilities))
+                   or (name == "smelling-salts" and self.status_defender == "paralysis")
+                   or (name == "acrobatics" and self.attacker_item in (None, "flying-gem"))
+                   or (name == "payback" and attacker_speed <= defender_speed)
+                   or (name in ("bolt-beak", "fishious-rend") and attacker_speed > defender_speed))
+        return power * 2 if doubled else power
