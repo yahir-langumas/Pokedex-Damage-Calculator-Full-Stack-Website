@@ -966,3 +966,269 @@ class FinalModifierTests(TestCase):
     # Modifiers combine and round after each one. Reflect and Life Orb is 2662.5, which rounds down to 2662.
     def test_modifiers_stack(self):
         self.assertEqual(self.modifier(make_calc("snorlax", "machamp", "tackle", attacker_item="life-orb"), reflect=True), 2662)
+
+class DamageCalcTests(TestCase):
+    fixtures = ["pokedata"]
+
+    # Calls calculate() and returns the lowest and highest dmg roll.
+    def damage(self, calc, **options):
+        result = calc.calculate(**options)
+        return (result["min_damage"], result["max_damage"])
+
+    # A level 50 Machamp's Close Combat on a level 50 Snorlax.
+    def test_basic_damage(self):
+        result = make_calc("machamp", "snorlax", "close-combat").calculate()
+        self.assertEqual((result["min_damage"], result["max_damage"]), (240, 284))
+        self.assertEqual(len(result["rolls"]), 16)
+        self.assertEqual(result["ko_chance"], "Guaranteed OHKO")
+
+    # 252 Atk Jolly Garchomp's Earthquake on 4 HP Heatran.
+    def test_evs_and_nature(self):
+        result = make_calc("garchomp", "heatran", "earthquake", attacker_build={"evs": {"hp": 4, "attack": 252, "speed": 252}, "nature": "jolly"}, defender_build={"evs": {"hp": 4}}).calculate()
+        self.assertEqual((result["min_damage"], result["max_damage"]), (328, 388))
+
+    # A crit at +2 Attack.
+    def test_crit_and_boosts(self):
+        result = make_calc("machamp", "snorlax", "close-combat").calculate(critical_hit=True, attacker_boosts={"attack": 2})
+        self.assertEqual((result["min_damage"], result["max_damage"]), (716, 846))
+
+    # Sun boosts Fire moves.
+    def test_weather(self):
+        result = make_calc("charizard", "venusaur", "flamethrower", weather="sun").calculate()
+        self.assertEqual((result["min_damage"], result["max_damage"]), (168, 198))
+
+    # Huge Power and Choice Band stack.
+    def test_ability_and_item(self):
+        result = make_calc("azumarill", "snorlax", "aqua-tail", attacker_ability="huge-power", attacker_item="choice-band").calculate()
+        self.assertEqual((result["min_damage"], result["max_damage"]), (126, 148))
+
+    # Multiscale halves the dmg at full HP.
+    def test_multiscale(self):
+        result = make_calc("dragonite", "dragonite", "outrage", attacker_ability="inner-focus", defender_ability="multiscale").calculate()
+        self.assertEqual((result["min_damage"], result["max_damage"]), (91, 108))
+
+    # A burned Pokémon's physical moves do half dmg.
+    def test_burn(self):
+        calc = DamageCalculator(Species.objects.get(name="snorlax"), Species.objects.get(name="machamp"), "normal", 85, "body-slam", "burn", None)
+        result = calc.calculate()
+        self.assertEqual((result["min_damage"], result["max_damage"]), (31, 37))
+
+    # Skill Link makes Icicle Spear hit 5 times. Thick Fat halves each hit.
+    def test_multi_hit(self):
+        result = make_calc("cloyster", "snorlax", "icicle-spear", attacker_ability="skill-link", defender_ability="thick-fat").calculate()
+        self.assertEqual(result["hits"], 5)
+        self.assertEqual((result["min_damage"], result["max_damage"]), (50, 65))
+
+    # Red Orb turns Groudon into Primal Groudon.
+    def test_primal_groudon(self):
+        result = make_calc("groudon", "snorlax", "precipice-blades", attacker_item="red-orb", weather="extreme-sun").calculate()
+        self.assertEqual((result["min_damage"], result["max_damage"]), (160, 189))
+
+    # Immunities do no dmg.
+    def test_immunities(self):
+        self.assertEqual(make_calc("snorlax", "gengar", "tackle").calculate()["max_damage"], 0)
+        self.assertEqual(make_calc("garchomp", "heatran", "earthquake", defender_item="air-balloon").calculate()["max_damage"], 0)
+        self.assertEqual(make_calc("garchomp", "rotom", "earthquake", defender_ability="levitate").calculate()["max_damage"], 0)
+
+    # Seismic Toss does dmg equal to the user's level.
+    def test_fixed_damage(self):
+        result = make_calc("machamp", "snorlax", "seismic-toss", attacker_build={"level": 37}).calculate()
+        self.assertEqual(result["rolls"], [37] * 16)
+
+    # Status moves don't do dmg.
+    def test_status_move(self):
+        result = make_calc("machamp", "snorlax", "growl").calculate()
+        self.assertEqual(result["max_damage"], 0)
+        self.assertEqual(result["note"], "Status moves don't do damage.")
+
+    # calculate() puts the calculator back how it was, so it can be run again.
+    def test_calculate_twice(self):
+        calc = make_calc("groudon", "snorlax", "precipice-blades", attacker_item="red-orb", weather="extreme-sun")
+        first = calc.calculate()
+        self.assertEqual(calc.attacker.name, "groudon")
+        self.assertEqual(calc.calculate(), first)
+
+    # Reflect halves physical dmg and Light Screen halves special dmg. Crits go through screens.
+    def test_screens(self):
+        reflect = make_calc("machamp", "snorlax", "close-combat").calculate(reflect=True)
+        self.assertEqual((reflect["min_damage"], reflect["max_damage"]), (120, 142))
+        light_screen = make_calc("charizard", "venusaur", "flamethrower").calculate(light_screen=True)
+        self.assertEqual((light_screen["min_damage"], light_screen["max_damage"]), (55, 66))
+        crit = make_calc("machamp", "snorlax", "close-combat").calculate(critical_hit=True, reflect=True)
+        self.assertEqual((crit["min_damage"], crit["max_damage"]), (360, 426))
+
+    # The % is out of the defender's max HP, but the KO chance goes by its current HP.
+    def test_percent_and_ko_text(self):
+        result = make_calc("garchomp", "snorlax", "earthquake").calculate()
+        self.assertEqual((result["min_percent"], result["max_percent"]), (42.5, 50.2))
+        self.assertEqual(result["ko_chance"], "Possible 2HKO")
+        hurt = make_calc("garchomp", "snorlax", "earthquake").calculate(defender_hp=150)
+        self.assertEqual((hurt["min_percent"], hurt["max_percent"]), (42.5, 50.2))
+        self.assertEqual(hurt["ko_chance"], "Guaranteed 2HKO")
+
+    # When only some rolls KO, it says the chance. 7 of the 16 rolls KO here.
+    def test_ohko_chance(self):
+        result = make_calc("gengar", "alakazam", "shadow-ball").calculate()
+        self.assertEqual((result["min_damage"], result["max_damage"]), (116, 140))
+        self.assertEqual(result["ko_chance"], "43.8% chance to OHKO")
+
+    # Triple Axel hits 3 times with 20, 40 and 60 power.
+    def test_triple_axel(self):
+        result = make_calc("weavile", "garchomp", "triple-axel").calculate()
+        self.assertEqual(result["hits"], 3)
+        self.assertEqual((result["min_damage"], result["max_damage"]), (340, 412))
+
+    # Moves that can't hit or can't be calculated yet say why in the note.
+    def test_notes(self):
+        self.assertEqual(make_calc("garchomp", "dragonite", "earthquake").calculate()["note"], "The move doesn't affect the target.")
+        self.assertEqual(make_calc("machamp", "snorlax", "counter").calculate()["note"], "This move's damage can't be calculated yet.")
+        self.assertIsNone(make_calc("machamp", "snorlax", "close-combat").calculate()["note"])
+
+    # Adaptability makes STAB 2x instead of 1.5x. Technician boosts Bullet Punch to 60 power.
+    def test_adaptability_and_technician(self):
+        self.assertEqual(self.damage(make_calc("porygon-z", "snorlax", "hyper-beam", attacker_ability="adaptability")), (136, 160))
+        result = make_calc("scizor", "gardevoir", "bullet-punch", attacker_ability="technician").calculate()
+        self.assertEqual(result["base_power"], 60)
+        self.assertEqual((result["min_damage"], result["max_damage"]), (120, 144))
+        self.assertEqual(result["ko_chance"], "6.2% chance to OHKO")
+
+    # 4x super effective and not very effective hits.
+    def test_type_effectiveness(self):
+        result = make_calc("lapras", "garchomp", "ice-beam").calculate()
+        self.assertEqual(result["effectiveness"], 4)
+        self.assertEqual((result["min_damage"], result["max_damage"]), (204, 244))
+        resisted = make_calc("charizard", "blastoise", "flamethrower").calculate()
+        self.assertEqual(resisted["effectiveness"], 0.5)
+        self.assertEqual((resisted["min_damage"], resisted["max_damage"]), (26, 31))
+
+    # Rain boosts Water moves and weakens Fire moves.
+    def test_rain(self):
+        surf = make_calc("blastoise", "charizard", "surf", weather="rain").calculate()
+        self.assertEqual((surf["min_damage"], surf["max_damage"]), (152, 182))
+        self.assertEqual(surf["ko_chance"], "93.8% chance to OHKO")
+        self.assertEqual(self.damage(make_calc("charizard", "venusaur", "flamethrower", weather="rain")), (54, 66))
+
+    # Electric Terrain boosts Electric moves and Grassy Terrain halves Earthquake.
+    def test_terrain(self):
+        electric = DamageCalculator(Species.objects.get(name="pikachu"), Species.objects.get(name="gyarados"), "electric", 90, "thunderbolt", None, None, terrain="electric-terrain")
+        self.assertEqual(self.damage(electric), (160, 192))
+        grassy = DamageCalculator(Species.objects.get(name="garchomp"), Species.objects.get(name="snorlax"), "ground", 100, "earthquake", None, None, terrain="grassy-terrain")
+        self.assertEqual(self.damage(grassy), (51, 60))
+
+    # Life Orb boosts everything, Expert Belt boosts super effective hits, and Sheer Force still gets the Life Orb boost.
+    def test_life_orb_and_expert_belt(self):
+        self.assertEqual(self.damage(make_calc("garchomp", "snorlax", "earthquake", attacker_item="life-orb")), (130, 153))
+        self.assertEqual(self.damage(make_calc("garchomp", "heatran", "earthquake", attacker_item="expert-belt")), (322, 389))
+        self.assertEqual(self.damage(make_calc("nidoking", "snorlax", "flamethrower", attacker_ability="sheer-force", attacker_item="life-orb")), (47, 56))
+
+    # Yache Berry halves a super effective Ice move. On a multi-hit move it only halves the first hit.
+    def test_resist_berries(self):
+        self.assertEqual(self.damage(make_calc("lapras", "garchomp", "ice-beam", defender_item="yache-berry")), (102, 122))
+        self.assertEqual(self.damage(make_calc("cloyster", "garchomp", "icicle-spear", attacker_ability="skill-link")), (320, 380))
+        self.assertEqual(self.damage(make_calc("cloyster", "garchomp", "icicle-spear", attacker_ability="skill-link", defender_item="yache-berry")), (288, 342))
+
+    # The defender's stat boosts lower the dmg.
+    def test_defender_boosts(self):
+        self.assertEqual(self.damage(make_calc("machamp", "snorlax", "close-combat"), defender_boosts={"defense": 1}), (162, 192))
+
+    # Lower level, 0 IVs and a full EV spread on both sides all change the dmg.
+    def test_level_ivs_and_evs(self):
+        level_30 = make_calc("machamp", "snorlax", "close-combat", attacker_build={"level": 30}).calculate()
+        self.assertEqual((level_30["min_damage"], level_30["max_damage"]), (96, 114))
+        self.assertEqual(level_30["ko_chance"], "Guaranteed 3HKO")
+        zero_ivs = make_calc("machamp", "snorlax", "close-combat", attacker_build={"ivs": {"hp": 0, "attack": 0, "defense": 0, "special-attack": 0, "special-defense": 0, "speed": 0}}).calculate()
+        self.assertEqual((zero_ivs["min_damage"], zero_ivs["max_damage"]), (216, 254))
+        self.assertEqual(zero_ivs["ko_chance"], "50.0% chance to OHKO")
+        spread = make_calc("machamp", "snorlax", "close-combat", attacker_build={"evs": {"attack": 252}, "nature": "adamant"}, defender_build={"evs": {"hp": 252, "defense": 252}, "nature": "impish"})
+        self.assertEqual(self.damage(spread), (212, 252))
+
+    # Guts ignores the burn's dmg drop and boosts Attack. Facade doubles and also ignores the burn.
+    def test_guts_and_facade(self):
+        guts = DamageCalculator(Species.objects.get(name="machamp"), Species.objects.get(name="snorlax"), "fighting", 120, "close-combat", "burn", None, attacker_ability="guts")
+        self.assertEqual(self.damage(guts), (356, 422))
+        facade = DamageCalculator(Species.objects.get(name="snorlax"), Species.objects.get(name="machamp"), "normal", 70, "facade", "burn", None)
+        self.assertEqual(self.damage(facade), (103, 123))
+
+    # Assault Vest boosts Sp. Def and Eviolite boosts Chansey's Defense.
+    def test_assault_vest_and_eviolite(self):
+        self.assertEqual(self.damage(make_calc("gengar", "snorlax", "sludge-bomb", defender_item="assault-vest")), (40, 48))
+        self.assertEqual(self.damage(make_calc("machamp", "chansey", "close-combat", defender_item="eviolite")), (548, 648))
+
+    # Foul Play uses the target's Attack, Body Press uses Defense, and Psyshock hits Defense.
+    def test_moves_that_use_other_stats(self):
+        self.assertEqual(self.damage(make_calc("umbreon", "garchomp", "foul-play")), (70, 84))
+        self.assertEqual(self.damage(make_calc("corviknight", "snorlax", "body-press")), (90, 106))
+        self.assertEqual(self.damage(make_calc("alakazam", "blissey", "psyshock")), (232, 274))
+
+    # Knock Off, Low Kick, Eruption and Gyro Ball get their power worked out before the dmg.
+    def test_variable_power_moves(self):
+        knock_off = make_calc("weavile", "alakazam", "knock-off", defender_item="leftovers").calculate()
+        self.assertEqual((knock_off["base_power"], knock_off["min_damage"], knock_off["max_damage"]), (97, 236, 278))
+        self.assertEqual(make_calc("machamp", "snorlax", "low-kick").calculate()["base_power"], 120)
+        eruption = make_calc("typhlosion", "snorlax", "eruption").calculate(attacker_hp=50)
+        self.assertEqual((eruption["base_power"], eruption["min_damage"], eruption["max_damage"]), (49, 28, 34))
+        gyro_ball = make_calc("ferrothorn", "weavile", "gyro-ball").calculate()
+        self.assertEqual((gyro_ball["base_power"], gyro_ball["min_damage"], gyro_ball["max_damage"]), (91, 138, 164))
+
+    # Sandstorm boosts Tyranitar's Sp. Def.
+    def test_sandstorm(self):
+        self.assertEqual(self.damage(make_calc("gardevoir", "tyranitar", "moonblast", weather="sandstorm")), (86, 104))
+
+    # Sacred Sword ignores the defender's Defense boosts and Unaware ignores the attacker's Attack boosts.
+    def test_ignoring_stat_changes(self):
+        self.assertEqual(self.damage(make_calc("gallade", "snorlax", "sacred-sword"), defender_boosts={"defense": 2}), (174, 206))
+        self.assertEqual(self.damage(make_calc("machamp", "snorlax", "close-combat", defender_ability="unaware"), attacker_boosts={"attack": 2}), (240, 284))
+
+    # Filter lowers super effective dmg and Fluffy doubles Fire dmg.
+    def test_filter_and_fluffy(self):
+        self.assertEqual(self.damage(make_calc("lapras", "garchomp", "ice-beam", defender_ability="filter")), (153, 183))
+        self.assertEqual(self.damage(make_calc("charizard", "dubwool", "flamethrower", defender_ability="fluffy")), (120, 144))
+
+    # Tinted Lens doubles a 1/4 effective hit and Sniper boosts crits.
+    def test_tinted_lens_and_sniper(self):
+        self.assertEqual(self.damage(make_calc("butterfree", "charizard", "bug-buzz", attacker_ability="tinted-lens")), (26, 32))
+        self.assertEqual(self.damage(make_calc("kingdra", "snorlax", "surf", attacker_ability="sniper"), critical_hit=True), (103, 123))
+
+    # Loaded Dice makes Bullet Seed hit 4 times.
+    def test_loaded_dice(self):
+        result = make_calc("cinccino", "snorlax", "bullet-seed", attacker_item="loaded-dice").calculate()
+        self.assertEqual(result["hits"], 4)
+        self.assertEqual((result["min_damage"], result["max_damage"]), (52, 64))
+
+    # Spectral Thief steals the target's boosts, Meteor Beam raises Sp. Atk before hitting and Photon Geyser turns physical when Attack is higher.
+    def test_stat_changing_moves(self):
+        self.assertEqual(self.damage(make_calc("marshadow", "garchomp", "spectral-thief"), defender_boosts={"attack": 2}), (127, 151))
+        self.assertEqual(self.damage(make_calc("gardevoir", "snorlax", "meteor-beam")), (76, 90))
+        photon_geyser = make_calc("necrozma", "snorlax", "photon-geyser").calculate(attacker_boosts={"attack": 2})
+        self.assertEqual(photon_geyser["category"], "physical")
+        self.assertEqual((photon_geyser["min_damage"], photon_geyser["max_damage"]), (169, 199))
+
+    # Freeze-Dry is super effective on Water types, Scrappy hits Ghost types with Normal moves and Mold Breaker ignores Levitate.
+    def test_type_tricks(self):
+        freeze_dry = make_calc("lapras", "gyarados", "freeze-dry").calculate()
+        self.assertEqual(freeze_dry["effectiveness"], 4)
+        self.assertEqual((freeze_dry["min_damage"], freeze_dry["max_damage"]), (136, 168))
+        self.assertEqual(self.damage(make_calc("kangaskhan", "gengar", "body-slam", attacker_ability="scrappy")), (69, 82))
+        self.assertEqual(self.damage(make_calc("excadrill", "rotom", "earthquake", attacker_ability="mold-breaker", defender_ability="levitate")), (182, 216))
+
+    # Wonder Guard only lets super effective moves hit, and Fire moves fail in heavy rain.
+    def test_moves_that_fail(self):
+        blocked = make_calc("garchomp", "shedinja", "earthquake", defender_ability="wonder-guard").calculate()
+        self.assertEqual(blocked["note"], "The move doesn't affect the target.")
+        self.assertEqual(make_calc("garchomp", "shedinja", "fire-fang", defender_ability="wonder-guard").calculate()["ko_chance"], "Guaranteed OHKO")
+        heavy_rain = make_calc("charizard", "snorlax", "flamethrower", weather="heavy-rain").calculate()
+        self.assertEqual((heavy_rain["max_damage"], heavy_rain["note"]), (0, "The move doesn't affect the target."))
+
+    # Battle Armor blocks crits and Frost Breath always crits.
+    def test_crit_rules(self):
+        blocked = make_calc("machamp", "snorlax", "close-combat", defender_ability="battle-armor").calculate(critical_hit=True)
+        self.assertFalse(blocked["critical_hit"])
+        self.assertEqual((blocked["min_damage"], blocked["max_damage"]), (240, 284))
+        frost_breath = make_calc("lapras", "garchomp", "frost-breath").calculate()
+        self.assertTrue(frost_breath["critical_hit"])
+        self.assertEqual((frost_breath["min_damage"], frost_breath["max_damage"]), (208, 252))
+
+    # Sword of Ruin lowers the target's Defense and Booster Energy boosts Great Tusk's Attack.
+    def test_ruin_and_booster_energy(self):
+        self.assertEqual(self.damage(make_calc("chien-pao", "garchomp", "icicle-crash")), (312, 372))
+        self.assertEqual(self.damage(make_calc("great-tusk", "snorlax", "headlong-rush", attacker_item="booster-energy")), (156, 184))

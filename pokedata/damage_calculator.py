@@ -7595,3 +7595,125 @@ class DamageCalculator:
         if first_hit and berry in RESIST_BERRIES and self.move_type == RESIST_BERRIES[berry] and (effectiveness > 1 or berry == "chilan-berry"):
             modifiers.append(1024 if "ripen" in self.defender_abilities else 2048)
         return chain_modifiers(modifiers, 41, 131072)
+
+    # Works out the dmg the attacker's move does to the defender. Returns a dict with all 16 dmg rolls, the % of the defender's HP, the KO chance and the details used.
+    # critical_hit = True to calc a crit. attacker_boosts and defender_boosts = stat stages, like {"attack": 2, "speed": -1}. -> all defense boosts are ignored for crits
+    # attacker_hp and defender_hp = current HP (full HP if not given). reflect, light_screen and aurora_veil = screens on the defender's side.
+    def calculate(self, critical_hit=False, attacker_boosts=None, defender_boosts=None, attacker_hp=None, defender_hp=None, reflect=False, light_screen=False, aurora_veil=False):
+        saved = {name: getattr(self, name) for name in ("attacker", "defender", "attacker_stats", "defender_stats", "attacker_types_data", "defender_types_data", "attacker_abilities", "defender_abilities", "move_type", "move_power")}
+        try:
+            return self.damage_steps(critical_hit, attacker_boosts or {}, defender_boosts or {}, attacker_hp, defender_hp, reflect, light_screen, aurora_veil)
+        finally:
+            for name, value in saved.items():
+                setattr(self, name, value)
+
+    # The steps calculate() goes through, in order. -> Used Smogon's dmg formula and the damage calc in Pokémon Showdown as references. The order of modifiers is important, since some abilities and items boost the move's power while others boost the dmg after the move's power is applied.
+    def damage_steps(self, critical_hit, attacker_boosts, defender_boosts, attacker_hp, defender_hp, reflect, light_screen, aurora_veil):
+        self.use_battle_forms()
+        self.ignore_abilities()
+        attacker_max_hp = self.attacker_stats["hp"]
+        defender_max_hp = self.defender_stats["hp"]
+        attacker_hp = attacker_max_hp if attacker_hp is None else attacker_hp
+        defender_hp = defender_max_hp if defender_hp is None else defender_hp
+        result = {"move": self.move_name, "move_type": self.move_type, "category": self.move_data.damage_class, "base_power": None, "effectiveness": 1, "critical_hit": False, "hits": 1,
+                  "rolls": [0] * 16, "min_damage": 0, "max_damage": 0, "min_percent": 0.0, "max_percent": 0.0, "defender_hp": defender_hp, "defender_max_hp": defender_max_hp,
+                  "ko_chance": "No damage", "note": None}
+        if self.status_move():
+            result["note"] = "Status moves don't do damage."
+            return result
+        if self.move_name in UNSUPPORTED_DAMAGE_MOVES or self.move_name in Z_AND_MAX_MOVES or "--" in self.move_name:
+            result["note"] = "This move's damage can't be calculated yet."
+            return result
+        # Speed decides turn order, which matters for Gyro Ball, Payback, Analytic and others.
+        # Spectral Thief steals the target's stat boosts before it hits.
+        if self.move_name == "spectral-thief":
+            attacker_boosts, defender_boosts = dict(attacker_boosts), dict(defender_boosts)
+            for stat, stage in defender_boosts.items():
+                if stage > 0:
+                    stolen = -stage if "contrary" in self.attacker_abilities else stage
+                    attacker_boosts[stat] = max(-6, min(6, attacker_boosts.get(stat, 0) + stolen))
+                    defender_boosts[stat] = 0
+        if self.move_name in ("meteor-beam", "electro-shot"):
+            attacker_boosts = dict(attacker_boosts)
+            attacker_boosts["special-attack"] = min(6, attacker_boosts.get("special-attack", 0) + 1)
+        attacker_speed = self.final_speed_attacker(attacker_boosts)
+        defender_speed = self.final_speed_defender(defender_boosts)
+        moves_last = attacker_speed <= defender_speed
+        base_power = self.variable_move_power(attacker_hp, defender_hp, attacker_boosts, defender_boosts, attacker_speed, defender_speed)
+        # Moves with set dmg have no power, so 1 stands in while the ability checks run.
+        self.move_power = base_power or 1
+        self.move_type, ate_changed = self.final_move_type()
+        result["move_type"] = self.move_type
+        category = self.move_data.damage_class
+        if self.move_name == "photon-geyser":
+            attack = apply_stage(self.attacker_stats["attack"], attacker_boosts.get("attack", 0))
+            special_attack = apply_stage(self.attacker_stats["special-attack"], attacker_boosts.get("special-attack", 0))
+            category = "physical" if attack > special_attack else "special"
+        if self.move_name == "shell-side-arm":
+            physical_side = apply_stage(self.attacker_stats["attack"], attacker_boosts.get("attack", 0)) / apply_stage(self.defender_stats["defense"], defender_boosts.get("defense", 0))
+            special_side = apply_stage(self.attacker_stats["special-attack"], attacker_boosts.get("special-attack", 0)) / apply_stage(self.defender_stats["special-defense"], defender_boosts.get("special-defense", 0))
+            category = "physical" if physical_side > special_side else "special"
+        physical = category == "physical"
+        physical_hit = physical or self.move_name in PHYSICAL_DEFENSE_SPECIAL_MOVES
+        result["category"] = category
+        effectiveness = self.final_type_effectiveness(defender_hp)
+        result["effectiveness"] = effectiveness
+        if effectiveness == 0 or self.move_blocked():
+            result["note"] = "The move doesn't affect the target."
+            return result
+        fixed = self.fixed_damage(attacker_hp, defender_hp)
+        if fixed is not None or not base_power:
+            if fixed is None:
+                result["note"] = "This move's damage can't be calculated yet."
+                return result
+            rolls = [fixed] * 16
+        else:
+            self.move_power = base_power
+            # Battle Armor and Shell Armor block crits. Merciless always crits a poisoned target.
+            always_crit = self.move_name in ALWAYS_CRIT_MOVES or ("merciless" in self.attacker_abilities and self.status_defender in ("poison", "badly-poison"))
+            critical_hit = (critical_hit or always_crit) and "battle-armor" not in self.defender_abilities and "shell-armor" not in self.defender_abilities
+            result["critical_hit"] = critical_hit
+            makes_contact = self.punching_glove_item_attacker()[1] and self.long_reach_ability_attacker()
+            if self.move_name == "shell-side-arm":
+                makes_contact = physical and "long-reach" not in self.attacker_abilities
+            attack = self.final_attack(physical, critical_hit, attacker_boosts, defender_boosts, attacker_hp)
+            defense = self.final_defense(physical_hit, critical_hit, attacker_boosts, defender_boosts)
+            stab = to_4096(self.adaptability_ability_attacker()) if self.move_name != "struggle" else 4096
+            if stab == 4096 and self.move_name != "struggle" and ("protean" in self.attacker_abilities or "libero" in self.attacker_abilities):
+                stab = 6144
+            burned = self.status_attacker == "burn" and physical and "guts" not in self.attacker_abilities and self.move_name != "facade"
+            first_hit_modifier = self.final_modifiers(physical, critical_hit, effectiveness, defender_hp, makes_contact, reflect, light_screen, aurora_veil)
+            later_hit_modifier = self.final_modifiers(physical, critical_hit, effectiveness, defender_hp, makes_contact, reflect, light_screen, aurora_veil, first_hit=False)
+            # Triple Axel and Triple Kick get stronger with each hit. Other multi-hit moves hit the same each time.
+            if self.move_name == "triple-axel":
+                hit_powers = [20, 40, 60]
+            elif self.move_name == "triple-kick":
+                hit_powers = [10, 20, 30]
+            else:
+                hit_powers = [base_power] * self.damage_calc_hits()
+            result["hits"] = len(hit_powers)
+            rolls = [0] * 16
+            for hit_number, hit_power in enumerate(hit_powers):
+                self.move_power = hit_power
+                final_modifier = first_hit_modifier if hit_number == 0 else later_hit_modifier
+                power = self.final_base_power(physical, effectiveness, ate_changed, moves_last, makes_contact, attacker_boosts, defender_hp)
+                if result["base_power"] is None:
+                    result["base_power"] = power
+                base_damage = (2 * self.attacker_level // 5 + 2) * power * attack // defense // 50 + 2
+                # Rain and sun boost or weaken the move. Hydro Steam gets boosted in sun instead.
+                weather_modifier = modifier_from(self.weather_move_power(), hit_power)
+                if self.move_name == "hydro-steam" and self.current_weather() == "sun" and self.held_item_attacker() != "utility-umbrella":
+                    weather_modifier = 6144
+                if weather_modifier != 4096:
+                    base_damage = poke_round(base_damage * weather_modifier / 4096)
+                if critical_hit:
+                    base_damage = base_damage * 3 // 2
+                hit_rolls = damage_rolls(base_damage, stab, effectiveness, burned, final_modifier)
+                rolls = [total + hit for total, hit in zip(rolls, hit_rolls)]
+        result["rolls"] = rolls
+        result["min_damage"] = min(rolls)
+        result["max_damage"] = max(rolls)
+        result["min_percent"] = math.floor(min(rolls) * 1000 / defender_max_hp) / 10
+        result["max_percent"] = math.floor(max(rolls) * 1000 / defender_max_hp) / 10
+        result["ko_chance"] = ko_chance_text(rolls, defender_hp)
+        return result
