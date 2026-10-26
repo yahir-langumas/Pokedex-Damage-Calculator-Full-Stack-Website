@@ -1,6 +1,6 @@
 from django.test import TestCase
 from pokedata.models import Species, Moves
-from pokedata.damage_calculator import DamageCalculator
+from pokedata.damage_calculator import DamageCalculator, apply_stage, chain_modifiers, damage_rolls, ko_chance_text, modifier_from, poke_round, to_4096
 from pokedata.stats import calculate_stats, make_build
 
 # Builds a DamageCalculator from Pokémon and move names.
@@ -23,6 +23,27 @@ class TypeAndWeatherTests(TestCase):
     # Rain boosts Water moves by 50%.
     def test_rain_boosts_water(self):
         self.assertEqual(make_calc("blastoise", "snorlax", "surf", weather="rain").weather_move_power(), 135)
+
+    # Sun boosts Fire moves and weakens Water moves by 50%.
+    def test_sun(self):
+        self.assertEqual(make_calc("charizard", "snorlax", "flamethrower", weather="sun").weather_move_power(), 135)
+        self.assertEqual(make_calc("blastoise", "snorlax", "surf", weather="sun").weather_move_power(), 45)
+
+    # Rain weakens Fire moves.
+    def test_rain_weakens_fire(self):
+        self.assertEqual(make_calc("charizard", "snorlax", "flamethrower", weather="rain").weather_move_power(), 45)
+
+    # Weather doesn't change moves of other types.
+    def test_weather_other_types(self):
+        self.assertEqual(make_calc("machamp", "snorlax", "close-combat", weather="sun").weather_move_power(), 120)
+
+    # Ground is super effective on both of Heatran's types, so it's 4x.
+    def test_double_weakness(self):
+        self.assertEqual(make_calc("garchomp", "heatran", "earthquake").type_effectiveness_defender(), 4)
+
+    # Water resists Fire.
+    def test_not_very_effective(self):
+        self.assertEqual(make_calc("charizard", "blastoise", "flamethrower").type_effectiveness_defender(), 0.5)
  
  
 class AbilityTests(TestCase):
@@ -48,6 +69,39 @@ class AbilityTests(TestCase):
     # Technician boosts moves with 60 power or less.
     def test_technician(self):
         self.assertEqual(make_calc("scizor", "snorlax", "bullet-punch", attacker_ability="technician").technician_ability_attacker(), 60)
+
+    # Adaptability makes STAB 2x instead of 1.5x, and does nothing for moves that aren't STAB.
+    def test_adaptability(self):
+        self.assertEqual(make_calc("porygon-z", "snorlax", "hyper-beam", attacker_ability="adaptability").adaptability_ability_attacker(), 2)
+        self.assertEqual(make_calc("porygon-z", "snorlax", "hyper-beam", attacker_ability="download").adaptability_ability_attacker(), 1.5)
+        self.assertEqual(make_calc("porygon-z", "snorlax", "shadow-ball", attacker_ability="adaptability").adaptability_ability_attacker(), 1)
+
+    # Overgrow boosts Grass moves by 1.5x at 1/3 HP or less.
+    def test_overgrow(self):
+        calc = make_calc("venusaur", "snorlax", "energy-ball", attacker_ability="overgrow")
+        self.assertEqual(calc.overgrow_ability_attacker(50, 155), 135)
+        self.assertEqual(calc.overgrow_ability_attacker(155, 155), 90)
+
+    # Fur Coat doubles Defense.
+    def test_fur_coat(self):
+        calc = make_calc("machamp", "furfrou", "close-combat", defender_ability="fur-coat")
+        self.assertEqual(calc.fur_coat_ability_defender(), calc.defender_stats["defense"] * 2)
+
+    # Reckless boosts recoil moves by 1.2x.
+    def test_reckless(self):
+        self.assertEqual(make_calc("staraptor", "snorlax", "double-edge", attacker_ability="reckless").reckless_ability_attacker(), 144)
+        self.assertEqual(make_calc("staraptor", "snorlax", "tackle", attacker_ability="reckless").reckless_ability_attacker(), 40)
+
+    # Mega Launcher boosts pulse moves and Sharpness boosts slicing moves by 1.5x.
+    def test_mega_launcher_and_sharpness(self):
+        self.assertEqual(make_calc("blastoise", "snorlax", "aura-sphere", attacker_ability="mega-launcher").mega_launcher_ability_attacker(), 120)
+        self.assertEqual(make_calc("gallade", "snorlax", "leaf-blade", attacker_ability="sharpness").sharpness_ability_attacker(), 135)
+
+    # Shadow Shield halves dmg at full HP.
+    def test_shadow_shield(self):
+        calc = make_calc("garchomp", "lunala", "earthquake", defender_ability="shadow-shield")
+        self.assertEqual(calc.shadow_shield_ability_defender(100, 100), 50)
+        self.assertEqual(calc.shadow_shield_ability_defender(99, 100), 100)
         
 class ItemTests(TestCase):
     fixtures = ["pokedata"]
@@ -63,6 +117,37 @@ class ItemTests(TestCase):
     # Unnerve stops the other Pokémon from eating Berries.
     def test_unnerve(self):
         self.assertIsNone(make_calc("snorlax", "mewtwo", "tackle", defender_ability="unnerve", attacker_item="oran-berry").held_berry_attacker())
+
+    # Life Orb boosts dmg by 1.3x and costs 10% HP, but Magic Guard stops the HP loss.
+    def test_life_orb(self):
+        self.assertEqual(make_calc("garchomp", "snorlax", "earthquake", attacker_item="life-orb").life_orb_item_attacker(), (1.3, 0.1))
+        self.assertEqual(make_calc("clefable", "snorlax", "moonblast", attacker_ability="magic-guard", attacker_item="life-orb").life_orb_item_attacker(), (1.3, 0))
+
+    # Choice Specs boosts Sp. Atk by 1.5x.
+    def test_choice_specs(self):
+        calc = make_calc("latios", "snorlax", "draco-meteor", attacker_item="choice-specs")
+        self.assertEqual(calc.choice_specs_item_attacker(), calc.attacker_stats["special-attack"] * 1.5)
+
+    # Charcoal boosts Fire moves by 1.2x but not other types.
+    def test_type_boost_item(self):
+        self.assertEqual(make_calc("charizard", "snorlax", "flamethrower", attacker_item="charcoal").type_boost_item_attacker(), 108)
+        self.assertEqual(make_calc("charizard", "snorlax", "air-slash", attacker_item="charcoal").type_boost_item_attacker(), 75)
+
+    # Fire Gem boosts Fire moves by 1.3x.
+    def test_gem(self):
+        self.assertEqual(make_calc("charizard", "snorlax", "flamethrower", attacker_item="fire-gem").gem_item_attacker(), 117)
+
+    # Light Ball only works on Pikachu.
+    def test_light_ball(self):
+        pikachu = make_calc("pikachu", "snorlax", "thunderbolt", attacker_item="light-ball")
+        self.assertEqual(pikachu.light_ball_item_attacker(), (pikachu.attacker_stats["attack"] * 2, pikachu.attacker_stats["special-attack"] * 2))
+        raichu = make_calc("raichu", "snorlax", "thunderbolt", attacker_item="light-ball")
+        self.assertEqual(raichu.light_ball_item_attacker(), (raichu.attacker_stats["attack"], raichu.attacker_stats["special-attack"]))
+
+    # Metal Powder doubles Ditto's Defense.
+    def test_metal_powder(self):
+        calc = make_calc("machamp", "ditto", "close-combat", defender_item="metal-powder")
+        self.assertEqual(calc.metal_powder_item_defender(), calc.defender_stats["defense"] * 2)
 
     
 class StatTests(TestCase):
@@ -98,6 +183,59 @@ class StatTests(TestCase):
     # The calculator uses real stats, so Choice Band boosts Machamp's level 50 Attack (150).
     def test_calculator_uses_real_stats(self):
         self.assertEqual(make_calc("machamp", "snorlax", "close-combat", attacker_item="choice-band").choice_band_item_attacker(), 225)
+
+    # Adamant raises Attack by 10% and lowers Sp. Atk by 10%.
+    def test_nature_raises_and_lowers(self):
+        garchomp = Species.objects.get(name="garchomp")
+        stats = calculate_stats(garchomp.stats, {"nature": "adamant"})
+        self.assertEqual((stats["attack"], stats["special-attack"]), (165, 90))
+
+    # All 5 neutral natures give the same stats.
+    def test_neutral_natures(self):
+        garchomp = Species.objects.get(name="garchomp")
+        stats = calculate_stats(garchomp.stats)
+        for nature in ("hardy", "docile", "serious", "bashful", "quirky"):
+            self.assertEqual(calculate_stats(garchomp.stats, {"nature": nature}), stats)
+
+    # make_build fills in level 50, 0 EVs, 31 IVs and a neutral nature.
+    def test_make_build_defaults(self):
+        build = make_build()
+        self.assertEqual((build["level"], build["nature"]), (50, "serious"))
+        self.assertEqual(set(build["evs"].values()), {0})
+        self.assertEqual(set(build["ivs"].values()), {31})
+
+    # Natures that don't exist aren't allowed.
+    def test_bad_nature(self):
+        with self.assertRaises(ValueError):
+            make_build({"nature": "spicy"})
+
+    # Level 0 and levels that aren't whole numbers aren't allowed.
+    def test_bad_level_values(self):
+        for level in (0, "50", 25.5):
+            with self.assertRaises(ValueError):
+                make_build({"level": level})
+
+    # More than 252 EVs in one stat and negative IVs aren't allowed.
+    def test_bad_ev_and_iv_values(self):
+        with self.assertRaises(ValueError):
+            make_build({"evs": {"attack": 253}})
+        with self.assertRaises(ValueError):
+            make_build({"ivs": {"hp": -1}})
+
+    # Exactly 510 EVs is allowed.
+    def test_max_evs_allowed(self):
+        build = make_build({"evs": {"attack": 252, "speed": 252, "hp": 6}})
+        self.assertEqual(sum(build["evs"].values()), 510)
+
+    # 252 HP EVs gives Garchomp 215 HP.
+    def test_hp_evs(self):
+        garchomp = Species.objects.get(name="garchomp")
+        self.assertEqual(calculate_stats(garchomp.stats, {"evs": {"hp": 252}})["hp"], 215)
+
+    # 0 Speed IVs lowers Garchomp's Speed from 122 to 107.
+    def test_zero_ivs(self):
+        garchomp = Species.objects.get(name="garchomp")
+        self.assertEqual(calculate_stats(garchomp.stats, {"ivs": {"speed": 0}})["speed"], 107)
 
 # Tests for the calc's helper functions: Speed, Protosynthesis/Quark Drive, weight, battle forms, ignored abilities and move type.
 class SpeedTests(TestCase):
@@ -135,6 +273,18 @@ class SpeedTests(TestCase):
     # Quark Drive with Booster Energy boosts Iron Bundle's Speed (its highest stat) by 1.5x.
     def test_quark_drive_speed(self):
         self.assertEqual(make_calc("iron-bundle", "snorlax", "hydro-pump", attacker_ability="quark-drive", attacker_item="booster-energy").final_speed_attacker(), 234)
+
+    # -1 Speed is 2/3.
+    def test_speed_drop(self):
+        self.assertEqual(make_calc("garchomp", "snorlax", "earthquake").final_speed_attacker({"speed": -1}), 81)
+
+    # Sand Rush doubles Speed in sandstorm.
+    def test_sand_rush(self):
+        self.assertEqual(make_calc("excadrill", "snorlax", "earthquake", attacker_ability="sand-rush", weather="sandstorm").final_speed_attacker(), 216)
+
+    # Slush Rush doubles Speed in snow.
+    def test_slush_rush(self):
+        self.assertEqual(make_calc("cetitan", "snorlax", "icicle-crash", attacker_ability="slush-rush", weather="snow").final_speed_attacker(), 186)
 
 
 class ParadoxStatTests(TestCase):
@@ -186,6 +336,10 @@ class WeightTests(TestCase):
     # The defender version.
     def test_defender_weight(self):
         self.assertEqual(make_calc("machamp", "snorlax", "low-kick", defender_ability="heavy-metal").final_weight_defender(), 9200)
+
+    # Float Stone on the defender halves its weight.
+    def test_defender_float_stone(self):
+        self.assertEqual(make_calc("machamp", "snorlax", "low-kick", defender_item="float-stone").final_weight_defender(), 2300)
 
 
 class BattleFormTests(TestCase):
@@ -351,6 +505,12 @@ class MoveTypeTests(TestCase):
     # A move with nothing changing it keeps its type.
     def test_no_change(self):
         self.assertEqual(make_calc("gengar", "snorlax", "shadow-ball").final_move_type(), ("ghost", False))
+
+    # Aerilate, Galvanize and Refrigerate turn Normal moves Flying, Electric and Ice, and boost them.
+    def test_other_ate_abilities(self):
+        self.assertEqual(make_calc("salamence", "snorlax", "double-edge", attacker_ability="aerilate").final_move_type(), ("flying", True))
+        self.assertEqual(make_calc("golem", "snorlax", "double-edge", attacker_ability="galvanize").final_move_type(), ("electric", True))
+        self.assertEqual(make_calc("glalie", "snorlax", "double-edge", attacker_ability="refrigerate").final_move_type(), ("ice", True))
 class TypeEffectivenessTests(TestCase):
     fixtures = ["pokedata"]
 
@@ -400,6 +560,10 @@ class TypeEffectivenessTests(TestCase):
         full_hp = calc.defender_stats["hp"]
         self.assertEqual(calc.final_type_effectiveness(full_hp), 0.5)
         self.assertEqual(calc.final_type_effectiveness(full_hp - 1), 2)
+
+    # Bug is resisted by both of Charizard's types, so it's 1/4.
+    def test_double_resist(self):
+        self.assertEqual(make_calc("butterfree", "charizard", "bug-buzz").final_type_effectiveness(153), 0.25)
 
 class MoveBlockedTests(TestCase):
     fixtures = ["pokedata"]
@@ -557,6 +721,11 @@ class KnockOffTests(TestCase):
         self.assertFalse(make_calc("weavile", "great-tusk", "knock-off", defender_ability="protosynthesis", defender_item="booster-energy").knock_off_boost())
         self.assertTrue(make_calc("weavile", "snorlax", "knock-off", defender_item="booster-energy").knock_off_boost())
 
+    # Memories and masks can be knocked off a Pokémon that isn't Silvally or Ogerpon.
+    def test_other_pokemon_items(self):
+        self.assertTrue(make_calc("weavile", "snorlax", "knock-off", defender_item="fire-memory").knock_off_boost())
+        self.assertTrue(make_calc("weavile", "snorlax", "knock-off", defender_item="wellspring-mask").knock_off_boost())
+
 
 class VariablePowerTests(TestCase):
     fixtures = ["pokedata"]
@@ -652,6 +821,27 @@ class VariablePowerTests(TestCase):
         self.assertEqual(self.power(make_calc("umbreon", "machamp", "payback"), attacker_speed=150, defender_speed=100), 50)
         self.assertEqual(self.power(make_calc("dracozolt", "machamp", "bolt-beak"), attacker_speed=150, defender_speed=100), 170)
 
+    # Heat Crash works like Heavy Slam and Water Spout works like Eruption.
+    def test_heat_crash_and_water_spout(self):
+        self.assertEqual(self.power(make_calc("snorlax", "pikachu", "heat-crash")), 120)
+        calc = make_calc("kyogre", "snorlax", "water-spout")
+        self.assertEqual(self.power(calc), 150)
+        self.assertEqual(self.power(calc, attacker_hp=70), 60)
+
+    # Power Trip works like Stored Power, and Punishment caps at 200.
+    def test_power_trip_and_punishment_cap(self):
+        self.assertEqual(self.power(make_calc("grimmsnarl", "snorlax", "power-trip"), attacker_boosts={"attack": 1, "defense": 1, "speed": 1}), 80)
+        self.assertEqual(self.power(make_calc("weavile", "snorlax", "punishment"), defender_boosts={"attack": 6, "defense": 6}), 200)
+
+    # Wake-Up Slap doubles on a sleeping target, Smelling Salts on a paralyzed one and Barb Barrage on a poisoned one.
+    def test_status_doubled_moves(self):
+        asleep = DamageCalculator(Species.objects.get(name="machamp"), Species.objects.get(name="snorlax"), "fighting", 70, "wake-up-slap", None, "sleep")
+        self.assertEqual(self.power(asleep), 140)
+        paralyzed = DamageCalculator(Species.objects.get(name="snorlax"), Species.objects.get(name="machamp"), "normal", 70, "smelling-salts", None, "paralysis")
+        self.assertEqual(self.power(paralyzed), 140)
+        poisoned = DamageCalculator(Species.objects.get(name="qwilfish"), Species.objects.get(name="machamp"), "poison", 60, "barb-barrage", None, "poison")
+        self.assertEqual(self.power(poisoned), 120)
+
 class HitCountTests(TestCase):
     fixtures = ["pokedata"]
 
@@ -689,6 +879,11 @@ class HitCountTests(TestCase):
         self.assertEqual(make_calc("maushold-family-of-four", "snorlax", "population-bomb").damage_calc_hits(), 10)
         self.assertEqual(make_calc("dondozo", "snorlax", "triple-dive").damage_calc_hits(), 3)
         self.assertEqual(make_calc("espeon", "snorlax", "twin-beam").damage_calc_hits(), 2)
+
+    # Dragon Darts always hits twice and Surging Strikes always hits 3 times.
+    def test_more_fixed_hits(self):
+        self.assertEqual(make_calc("dragapult", "snorlax", "dragon-darts").damage_calc_hits(), 2)
+        self.assertEqual(make_calc("urshifu-single-strike", "snorlax", "surging-strikes").damage_calc_hits(), 3)
 
 
 class BasePowerTests(TestCase):
@@ -762,6 +957,18 @@ class BasePowerTests(TestCase):
     # Abilities and items stack. Technician and Metal Coat on Bullet Punch is 40 x 1.5 x 1.2.
     def test_modifiers_stack(self):
         self.assertEqual(self.power(make_calc("scizor", "snorlax", "bullet-punch", attacker_ability="technician", attacker_item="metal-coat")), 72)
+
+    # Venoshock doubles on a poisoned target and Expanding Force gets 1.5x in Psychic Terrain.
+    def test_venoshock_and_expanding_force(self):
+        poisoned = DamageCalculator(Species.objects.get(name="toxapex"), Species.objects.get(name="machamp"), "poison", 65, "venoshock", None, "poison")
+        self.assertEqual(self.power(poisoned, physical=False), 130)
+        expanding_force = DamageCalculator(Species.objects.get(name="alakazam"), Species.objects.get(name="machamp"), "psychic", 80, "expanding-force", None, None, terrain="psychic-terrain")
+        self.assertEqual(self.power(expanding_force, physical=False), 156)
+
+    # Mega Launcher boosts pulse moves by 1.5x and Reckless boosts recoil moves by 1.2x.
+    def test_mega_launcher_and_reckless(self):
+        self.assertEqual(self.power(make_calc("blastoise", "snorlax", "aura-sphere", attacker_ability="mega-launcher"), physical=False), 120)
+        self.assertEqual(self.power(make_calc("staraptor", "snorlax", "double-edge", attacker_ability="reckless")), 144)
 
 
 class AttackStatTests(TestCase):
@@ -889,6 +1096,11 @@ class DefenseStatTests(TestCase):
         self.assertEqual(self.defense(make_calc("chien-pao", "snorlax", "tackle", attacker_ability="sword-of-ruin")), 64)
         self.assertEqual(self.defense(make_calc("chi-yu", "snorlax", "tackle", attacker_ability="beads-of-ruin"), physical_hit=False), 97)
 
+    # Metal Powder doubles Ditto's Defense.
+    def test_metal_powder(self):
+        calc = make_calc("machamp", "ditto", "close-combat", defender_item="metal-powder")
+        self.assertEqual(self.defense(calc), calc.defender_stats["defense"] * 2)
+
 
 class FinalModifierTests(TestCase):
     fixtures = ["pokedata"]
@@ -966,6 +1178,18 @@ class FinalModifierTests(TestCase):
     # Modifiers combine and round after each one. Reflect and Life Orb is 2662.5, which rounds down to 2662.
     def test_modifiers_stack(self):
         self.assertEqual(self.modifier(make_calc("snorlax", "machamp", "tackle", attacker_item="life-orb"), reflect=True), 2662)
+
+    # Shadow Shield halves dmg at full HP, like Multiscale.
+    def test_shadow_shield(self):
+        calc = make_calc("garchomp", "lunala", "earthquake", defender_ability="shadow-shield")
+        self.assertEqual(self.modifier(calc), 2048)
+        self.assertEqual(self.modifier(calc, defender_hp=calc.defender_stats["hp"] - 1), 4096)
+
+    # Solid Rock and Prism Armor work like Filter, and Punk Rock halves sound moves.
+    def test_solid_rock_prism_armor_and_punk_rock(self):
+        self.assertEqual(self.modifier(make_calc("lapras", "rhyperior", "surf", defender_ability="solid-rock"), physical=False, effectiveness=4), 3072)
+        self.assertEqual(self.modifier(make_calc("lapras", "necrozma", "surf", defender_ability="prism-armor"), physical=False, effectiveness=2), 3072)
+        self.assertEqual(self.modifier(make_calc("primarina", "toxtricity-amped", "boomburst", defender_ability="punk-rock"), physical=False), 2048)
 
 class DamageCalcTests(TestCase):
     fixtures = ["pokedata"]
@@ -1232,3 +1456,115 @@ class DamageCalcTests(TestCase):
     def test_ruin_and_booster_energy(self):
         self.assertEqual(self.damage(make_calc("chien-pao", "garchomp", "icicle-crash")), (312, 372))
         self.assertEqual(self.damage(make_calc("great-tusk", "snorlax", "headlong-rush", attacker_item="booster-energy")), (156, 184))
+
+    # Choice Specs Latios's Draco Meteor on Garchomp.
+    def test_choice_specs(self):
+        self.assertEqual(self.damage(make_calc("latios", "garchomp", "draco-meteor", attacker_item="choice-specs")), (314, 372))
+
+    # Choice Band Dragonite's Outrage on Garchomp.
+    def test_choice_band(self):
+        self.assertEqual(self.damage(make_calc("dragonite", "garchomp", "outrage", attacker_item="choice-band")), (272, 324))
+
+    # Kyogre's Water Spout in rain gets weaker as Kyogre loses HP.
+    def test_water_spout_in_rain(self):
+        full = make_calc("kyogre", "heatran", "water-spout", weather="rain").calculate()
+        self.assertEqual((full["base_power"], full["min_damage"], full["max_damage"]), (150, 344, 408))
+        hurt = make_calc("kyogre", "heatran", "water-spout", weather="rain").calculate(attacker_hp=100)
+        self.assertEqual((hurt["base_power"], hurt["min_damage"], hurt["max_damage"]), (85, 198, 234))
+
+    # Volcarona's Fiery Dance is 4x on Ferrothorn.
+    def test_four_times_weak(self):
+        result = make_calc("volcarona", "ferrothorn", "fiery-dance").calculate()
+        self.assertEqual(result["effectiveness"], 4)
+        self.assertEqual((result["min_damage"], result["max_damage"]), (208, 252))
+
+    # Snow boosts Abomasnow's Defense, which turns a guaranteed OHKO into a 12.5% chance.
+    def test_snow(self):
+        self.assertEqual(make_calc("machamp", "abomasnow", "close-combat").calculate()["ko_chance"], "Guaranteed OHKO")
+        snow = make_calc("machamp", "abomasnow", "close-combat", weather="snow").calculate()
+        self.assertEqual((snow["min_damage"], snow["max_damage"]), (144, 170))
+        self.assertEqual(snow["ko_chance"], "12.5% chance to OHKO")
+
+    # Aurora Veil halves dmg like Reflect.
+    def test_aurora_veil(self):
+        self.assertEqual(self.damage(make_calc("machamp", "snorlax", "close-combat"), aurora_veil=True), (120, 142))
+
+    # A level 1 Magikarp's Tackle still does at least 1 dmg.
+    def test_minimum_damage(self):
+        self.assertEqual(self.damage(make_calc("magikarp", "blissey", "tackle", attacker_build={"level": 1})), (1, 2))
+
+
+# Tests for the dmg math helpers at the top of damage_calculator.py.
+class MathHelperTests(TestCase):
+
+    # .5 rounds down and anything over .5 rounds up.
+    def test_poke_round(self):
+        self.assertEqual(poke_round(2.5), 2)
+        self.assertEqual(poke_round(2.51), 3)
+        self.assertEqual(poke_round(3.4), 3)
+        self.assertEqual(poke_round(7), 7)
+
+    # Multipliers turn into modifiers out of 4096.
+    def test_to_4096(self):
+        self.assertEqual(to_4096(1.5), 6144)
+        self.assertEqual(to_4096(1.3), 5325)
+        self.assertEqual(to_4096(1.2), 4915)
+        self.assertEqual(to_4096(0.5), 2048)
+
+    # No modifiers means 4096 (1x).
+    def test_chain_modifiers_empty(self):
+        self.assertEqual(chain_modifiers([], 41, 131072), 4096)
+        self.assertEqual(chain_modifiers([4096, 4096], 41, 131072), 4096)
+
+    # Modifiers round after each one. Reflect and Life Orb is 2662.5, which rounds down.
+    def test_chain_modifiers_rounding(self):
+        self.assertEqual(chain_modifiers([6144], 41, 131072), 6144)
+        self.assertEqual(chain_modifiers([2048, 5324], 41, 131072), 2662)
+
+    # The combined modifier can't go below or above the limits.
+    def test_chain_modifiers_limits(self):
+        self.assertEqual(chain_modifiers([1], 41, 131072), 41)
+        self.assertEqual(chain_modifiers([131072, 131072], 41, 131072), 131072)
+
+    # Stat stages. +1 is 1.5x, +6 is 4x, -1 is 2/3 and -6 is 1/4.
+    def test_apply_stage(self):
+        self.assertEqual(apply_stage(150, 0), 150)
+        self.assertEqual(apply_stage(150, 1), 225)
+        self.assertEqual(apply_stage(150, 6), 600)
+        self.assertEqual(apply_stage(150, -1), 100)
+        self.assertEqual(apply_stage(150, -6), 37)
+
+    # Stages past +6 or -6 count as +6 or -6.
+    def test_apply_stage_caps(self):
+        self.assertEqual(apply_stage(150, 8), 600)
+        self.assertEqual(apply_stage(150, -8), 37)
+
+    # Before and after values turn into a modifier. No change, a 0 or a None gives 4096.
+    def test_modifier_from(self):
+        self.assertEqual(modifier_from(150, 100), 6144)
+        self.assertEqual(modifier_from(50, 100), 2048)
+        self.assertEqual(modifier_from(100, 100), 4096)
+        self.assertEqual(modifier_from(100, 0), 4096)
+        self.assertEqual(modifier_from(None, 100), 4096)
+
+    # No dmg, a guaranteed OHKO and a chance to OHKO.
+    def test_ko_chance_one_hit(self):
+        self.assertEqual(ko_chance_text([0] * 16, 100), "No damage")
+        self.assertEqual(ko_chance_text([100] * 16, 100), "Guaranteed OHKO")
+        self.assertEqual(ko_chance_text([90] * 12 + [100] * 4, 100), "25.0% chance to OHKO")
+
+    # Guaranteed and possible multi-hit KOs.
+    def test_ko_chance_more_hits(self):
+        self.assertEqual(ko_chance_text([50] * 16, 100), "Guaranteed 2HKO")
+        self.assertEqual(ko_chance_text(list(range(40, 56)), 100), "Possible 2HKO")
+
+    # With no modifiers the 16 rolls go from 85% to 100% of the base dmg.
+    def test_damage_rolls(self):
+        self.assertEqual(damage_rolls(100, 4096, 1, False, 4096), list(range(85, 101)))
+
+    # STAB, type effectiveness and burn change each roll, and every roll does at least 1.
+    def test_damage_rolls_modifiers(self):
+        self.assertEqual(damage_rolls(100, 6144, 1, False, 4096)[-1], 150)
+        self.assertEqual(damage_rolls(100, 4096, 2, False, 4096)[-1], 200)
+        self.assertEqual(damage_rolls(100, 4096, 1, True, 4096)[-1], 50)
+        self.assertEqual(damage_rolls(1, 4096, 0.25, False, 4096), [1] * 16)
