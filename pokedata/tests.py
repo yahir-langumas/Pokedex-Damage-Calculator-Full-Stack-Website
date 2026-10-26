@@ -826,3 +826,143 @@ class AttackStatTests(TestCase):
     def test_defender_abilities(self):
         self.assertEqual(self.attack(make_calc("charizard", "snorlax", "flamethrower", defender_ability="thick-fat"), physical=False), 64)
         self.assertEqual(self.attack(make_calc("garchomp", "machamp", "earthquake", defender_ability="tablets-of-ruin")), 112)
+
+class DefenseStatTests(TestCase):
+    fixtures = ["pokedata"]
+
+    # Calls final_defense as a physical, non-crit hit with no stat stages unless a test says otherwise.
+    def defense(self, calc, physical_hit=True, critical_hit=False, attacker_boosts=None, defender_boosts=None):
+        return calc.final_defense(physical_hit, critical_hit, attacker_boosts or {}, defender_boosts or {})
+
+    # Physical hits use Defense and special hits use Sp. Def.
+    def test_defense_and_special_defense(self):
+        self.assertEqual(self.defense(make_calc("machamp", "snorlax", "tackle")), 85)
+        self.assertEqual(self.defense(make_calc("machamp", "snorlax", "tackle"), physical_hit=False), 130)
+
+    # Stat stages raise or lower the stat. +1 is 1.5x and -2 is 1/2.
+    def test_stat_stages(self):
+        self.assertEqual(self.defense(make_calc("machamp", "snorlax", "tackle"), defender_boosts={"defense": 1}), 127)
+        self.assertEqual(self.defense(make_calc("machamp", "snorlax", "tackle"), defender_boosts={"defense": -2}), 42)
+
+    # Crits ignore the defender's stat boosts but keep its drops.
+    def test_critical_hit(self):
+        self.assertEqual(self.defense(make_calc("machamp", "snorlax", "tackle"), critical_hit=True, defender_boosts={"defense": 2}), 85)
+        self.assertEqual(self.defense(make_calc("machamp", "snorlax", "tackle"), critical_hit=True, defender_boosts={"defense": -1}), 56)
+
+    # Unaware and Sacred Sword ignore the defender's stat changes.
+    def test_unaware_and_sacred_sword(self):
+        self.assertEqual(self.defense(make_calc("machamp", "snorlax", "tackle", attacker_ability="unaware"), defender_boosts={"defense": 2}), 85)
+        self.assertEqual(self.defense(make_calc("gallade", "snorlax", "sacred-sword"), defender_boosts={"defense": 2}), 85)
+        self.assertEqual(self.defense(make_calc("gallade", "snorlax", "sacred-sword"), defender_boosts={"defense": -2}), 85)
+
+    # Sandstorm boosts Rock types' Sp. Def by 1.5x, but not their Defense or anyone else's Sp. Def.
+    def test_sandstorm(self):
+        self.assertEqual(self.defense(make_calc("machamp", "tyranitar", "tackle", weather="sandstorm"), physical_hit=False), 180)
+        self.assertEqual(self.defense(make_calc("machamp", "tyranitar", "tackle", weather="sandstorm")), 130)
+        self.assertEqual(self.defense(make_calc("machamp", "snorlax", "tackle", weather="sandstorm"), physical_hit=False), 130)
+
+    # Snow boosts Ice types' Defense by 1.5x. 142.5 rounds down to 142.
+    def test_snow(self):
+        self.assertEqual(self.defense(make_calc("machamp", "abomasnow", "tackle", weather="snow")), 142)
+        self.assertEqual(self.defense(make_calc("machamp", "abomasnow", "tackle")), 95)
+
+    # Eviolite boosts both defenses by 1.5x, but only on Pokémon that can still evolve.
+    def test_eviolite(self):
+        self.assertEqual(self.defense(make_calc("machamp", "chansey", "tackle", defender_item="eviolite")), 37)
+        self.assertEqual(self.defense(make_calc("machamp", "chansey", "tackle", defender_item="eviolite"), physical_hit=False), 187)
+        self.assertEqual(self.defense(make_calc("machamp", "blissey", "tackle", defender_item="eviolite")), 30)
+
+    # Assault Vest boosts Sp. Def by 1.5x but not Defense.
+    def test_assault_vest(self):
+        self.assertEqual(self.defense(make_calc("machamp", "snorlax", "tackle", defender_item="assault-vest"), physical_hit=False), 195)
+        self.assertEqual(self.defense(make_calc("machamp", "snorlax", "tackle", defender_item="assault-vest")), 85)
+
+    # Fur Coat doubles Defense and Marvel Scale boosts it by 1.5x when the defender has a status.
+    def test_fur_coat_and_marvel_scale(self):
+        self.assertEqual(self.defense(make_calc("machamp", "snorlax", "tackle", defender_ability="fur-coat")), 170)
+        burned = DamageCalculator(Species.objects.get(name="machamp"), Species.objects.get(name="milotic"), "normal", 40, "tackle", None, "burn", defender_ability="marvel-scale")
+        self.assertEqual(self.defense(burned), 148)
+        self.assertEqual(self.defense(make_calc("machamp", "milotic", "tackle", defender_ability="marvel-scale")), 99)
+
+    # Sword of Ruin lowers the defender's Defense and Beads of Ruin lowers its Sp. Def to 0.75x. 97.5 rounds down to 97.
+    def test_ruin_abilities(self):
+        self.assertEqual(self.defense(make_calc("chien-pao", "snorlax", "tackle", attacker_ability="sword-of-ruin")), 64)
+        self.assertEqual(self.defense(make_calc("chi-yu", "snorlax", "tackle", attacker_ability="beads-of-ruin"), physical_hit=False), 97)
+
+
+class FinalModifierTests(TestCase):
+    fixtures = ["pokedata"]
+
+    # Calls final_modifiers as a physical, non-crit, neutral, non-contact first hit at full HP with no screens unless a test says otherwise.
+    def modifier(self, calc, physical=True, critical_hit=False, effectiveness=1, defender_hp=None, makes_contact=False, reflect=False, light_screen=False, aurora_veil=False, first_hit=True):
+        defender_hp = calc.defender_stats["hp"] if defender_hp is None else defender_hp
+        return calc.final_modifiers(physical, critical_hit, effectiveness, defender_hp, makes_contact, reflect, light_screen, aurora_veil, first_hit)
+
+    # No modifiers means 4096 (1x).
+    def test_no_modifiers(self):
+        self.assertEqual(self.modifier(make_calc("snorlax", "machamp", "tackle")), 4096)
+
+    # Reflect halves physical dmg and Light Screen halves special dmg. Aurora Veil halves both.
+    def test_screens(self):
+        self.assertEqual(self.modifier(make_calc("snorlax", "machamp", "tackle"), reflect=True), 2048)
+        self.assertEqual(self.modifier(make_calc("snorlax", "machamp", "tackle"), physical=False, reflect=True), 4096)
+        self.assertEqual(self.modifier(make_calc("snorlax", "machamp", "tackle"), physical=False, light_screen=True), 2048)
+        self.assertEqual(self.modifier(make_calc("snorlax", "machamp", "tackle"), aurora_veil=True), 2048)
+        self.assertEqual(self.modifier(make_calc("snorlax", "machamp", "tackle"), physical=False, aurora_veil=True), 2048)
+
+    # Crits, Infiltrator and Brick Break go through screens.
+    def test_ignoring_screens(self):
+        self.assertEqual(self.modifier(make_calc("snorlax", "machamp", "tackle"), critical_hit=True, reflect=True), 4096)
+        self.assertEqual(self.modifier(make_calc("snorlax", "machamp", "tackle", attacker_ability="infiltrator"), reflect=True), 4096)
+        self.assertEqual(self.modifier(make_calc("machamp", "snorlax", "brick-break"), reflect=True), 4096)
+
+    # Multiscale halves dmg at full HP, but only on the first hit.
+    def test_multiscale(self):
+        calc = make_calc("garchomp", "dragonite", "dragon-claw", defender_ability="multiscale")
+        self.assertEqual(self.modifier(calc), 2048)
+        self.assertEqual(self.modifier(calc, defender_hp=calc.defender_stats["hp"] - 1), 4096)
+        self.assertEqual(self.modifier(calc, first_hit=False), 4096)
+
+    # Filter takes 0.75x dmg from super effective moves.
+    def test_filter(self):
+        self.assertEqual(self.modifier(make_calc("machamp", "mr-mime", "tackle", defender_ability="filter"), effectiveness=2), 3072)
+        self.assertEqual(self.modifier(make_calc("machamp", "mr-mime", "tackle", defender_ability="filter")), 4096)
+
+    # Fluffy halves contact dmg but doubles Fire dmg. A Fire contact move cancels out.
+    def test_fluffy(self):
+        self.assertEqual(self.modifier(make_calc("machamp", "dubwool", "tackle", defender_ability="fluffy"), makes_contact=True), 2048)
+        self.assertEqual(self.modifier(make_calc("charizard", "dubwool", "flamethrower", defender_ability="fluffy"), physical=False), 8192)
+        self.assertEqual(self.modifier(make_calc("charizard", "dubwool", "fire-punch", defender_ability="fluffy"), makes_contact=True), 4096)
+
+    # Ice Scales halves special dmg but not physical dmg.
+    def test_ice_scales(self):
+        self.assertEqual(self.modifier(make_calc("charizard", "frosmoth", "flamethrower", defender_ability="ice-scales"), physical=False), 2048)
+        self.assertEqual(self.modifier(make_calc("machamp", "frosmoth", "tackle", defender_ability="ice-scales")), 4096)
+
+    # Tinted Lens doubles not very effective dmg, Neuroforce gives 1.25x on super effective hits and Sniper gives 1.5x on crits.
+    def test_attacker_abilities(self):
+        self.assertEqual(self.modifier(make_calc("butterfree", "machamp", "bug-buzz", attacker_ability="tinted-lens"), physical=False, effectiveness=0.5), 8192)
+        self.assertEqual(self.modifier(make_calc("necrozma", "machamp", "psychic", attacker_ability="neuroforce"), physical=False, effectiveness=2), 5120)
+        self.assertEqual(self.modifier(make_calc("kingdra", "machamp", "surf", attacker_ability="sniper"), physical=False, critical_hit=True), 6144)
+
+    # Expert Belt gives 1.2x on super effective hits and Life Orb gives 1.3x on everything.
+    def test_expert_belt_and_life_orb(self):
+        self.assertEqual(self.modifier(make_calc("snorlax", "machamp", "tackle", attacker_item="expert-belt"), effectiveness=2), 4915)
+        self.assertEqual(self.modifier(make_calc("snorlax", "machamp", "tackle", attacker_item="expert-belt")), 4096)
+        self.assertEqual(self.modifier(make_calc("snorlax", "machamp", "tackle", attacker_item="life-orb")), 5324)
+
+    # Resist Berries halve super effective dmg of their type on the first hit. Ripen makes it 1/4 and Chilan Berry works on neutral Normal moves.
+    def test_resist_berries(self):
+        self.assertEqual(self.modifier(make_calc("charizard", "scizor", "flamethrower", defender_item="occa-berry"), physical=False, effectiveness=4), 2048)
+        self.assertEqual(self.modifier(make_calc("charizard", "snorlax", "flamethrower", defender_item="occa-berry"), physical=False), 4096)
+        self.assertEqual(self.modifier(make_calc("charizard", "scizor", "flamethrower", defender_ability="ripen", defender_item="occa-berry"), physical=False, effectiveness=4), 1024)
+        self.assertEqual(self.modifier(make_calc("charizard", "scizor", "flamethrower", defender_item="occa-berry"), physical=False, effectiveness=4, first_hit=False), 4096)
+        self.assertEqual(self.modifier(make_calc("snorlax", "machamp", "tackle", defender_item="chilan-berry")), 2048)
+
+    # Unnerve stops the defender from eating its Berry.
+    def test_unnerve(self):
+        self.assertEqual(self.modifier(make_calc("charizard", "scizor", "flamethrower", attacker_ability="unnerve", defender_item="occa-berry"), physical=False, effectiveness=4), 4096)
+
+    # Modifiers combine and round after each one. Reflect and Life Orb is 2662.5, which rounds down to 2662.
+    def test_modifiers_stack(self):
+        self.assertEqual(self.modifier(make_calc("snorlax", "machamp", "tackle", attacker_item="life-orb"), reflect=True), 2662)

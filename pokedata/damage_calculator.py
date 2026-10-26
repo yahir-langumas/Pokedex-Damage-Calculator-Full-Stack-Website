@@ -7533,3 +7533,65 @@ class DamageCalculator:
             for new_stat in (self.deep_sea_tooth_item_attacker(), light_ball[1], self.choice_specs_item_attacker()):
                 modifiers.append(modifier_from(new_stat, base_stat))
         return max(1, poke_round(attack * chain_modifiers(modifiers, 410, 131072) / 4096))
+    
+    # The defending stat after stat stages, weather and modifiers. Psyshock, Psystrike and Secret Sword hit Defense even though they're special.
+    def final_defense(self, physical_hit, critical_hit, attacker_boosts, defender_boosts):
+        stat = "defense" if physical_hit else "special-defense"
+        defense = self.defender_stats[stat]
+        stage = defender_boosts.get(stat, 0)
+        # Crits ignore the defender's stat boosts, and Unaware and moves like Sacred Sword ignore all of its stat changes.
+        if stage != 0 and not (critical_hit and stage > 0) and self.move_name not in IGNORE_DEFENSE_STAGE_MOVES and "unaware" not in self.attacker_abilities:
+            defense = apply_stage(defense, stage)
+        # Sandstorm boosts Rock types' Sp. Def and snow boosts Ice types' Defense.
+        if self.weather_stat_defender(stat) != self.defender_stats[stat]:
+            defense = poke_round(defense * 3 / 2)
+        base_stat = self.defender_stats[stat]
+        modifiers = []
+        eviolite = self.eviolite_item_defender()
+        if physical_hit:
+            for new_stat in (self.marvel_scale_ability_defender(), self.grass_pelt_ability_defender(), self.fur_coat_ability_defender(), self.sword_of_ruin_ability_attacker(), eviolite[0], self.metal_powder_item_defender()):
+                modifiers.append(modifier_from(new_stat, base_stat))
+        else:
+            for new_stat in (self.flower_gift_ability_defender()[1], self.beads_of_ruin_ability_attacker(), eviolite[1], self.assault_vest_item_defender(), self.deep_sea_scale_item_defender()):
+                modifiers.append(modifier_from(new_stat, base_stat))
+        if self.paradox_boosted_stat_defender(defender_boosts) == stat:
+            modifiers.append(5324)
+        return max(1, poke_round(defense * chain_modifiers(modifiers, 410, 131072) / 4096))
+
+    def final_modifiers(self, physical, critical_hit, effectiveness, defender_hp, makes_contact, reflect, light_screen, aurora_veil, first_hit=True):
+        power = self.move_power
+        modifiers = []
+        # Reflect, Light Screen and Aurora Veil halve the dmg, unless it's a crit, the attacker has Infiltrator or the move breaks screens.
+        screen_up = aurora_veil or (reflect and physical) or (light_screen and not physical)
+        if screen_up and not critical_hit and self.move_name not in ("brick-break", "psychic-fangs", "raging-bull"):
+            modifiers.append(to_4096(self.infiltrator_ability_attacker(True)))
+        if "neuroforce" in self.attacker_abilities and effectiveness > 1:
+            modifiers.append(5120)
+        if critical_hit and "sniper" in self.attacker_abilities:
+            modifiers.append(6144)
+        if "tinted-lens" in self.attacker_abilities and effectiveness < 1:
+            modifiers.append(8192)
+        # The defender's abilities that lower the dmg it takes.
+        if first_hit:
+            for new_power in (self.multiscale_ability_defender(defender_hp, self.defender_stats["hp"]), self.shadow_shield_ability_defender(defender_hp, self.defender_stats["hp"])):
+                modifiers.append(modifier_from(new_power, power))
+        if makes_contact:
+            if "fluffy" in self.defender_abilities:
+                modifiers.append(2048)
+            modifiers.append(modifier_from(self.aura_guard_ability_defender(), power))
+        modifiers.append(modifier_from(self.punk_rock_ability_defender(), power))
+        if "ice-scales" in self.defender_abilities and not physical:
+            modifiers.append(2048)
+        if effectiveness > 1 and ("filter" in self.defender_abilities or "solid-rock" in self.defender_abilities or "prism-armor" in self.defender_abilities):
+            modifiers.append(3072)
+        if "fluffy" in self.defender_abilities and self.move_type == "fire":
+            modifiers.append(8192)
+        # Items.
+        if self.held_item_attacker() == "expert-belt" and effectiveness > 1:
+            modifiers.append(4915)
+        if self.life_orb_item_attacker()[0] != 1:
+            modifiers.append(5324)
+        berry = self.held_berry_defender()
+        if first_hit and berry in RESIST_BERRIES and self.move_type == RESIST_BERRIES[berry] and (effectiveness > 1 or berry == "chilan-berry"):
+            modifiers.append(1024 if "ripen" in self.defender_abilities else 2048)
+        return chain_modifiers(modifiers, 41, 131072)
