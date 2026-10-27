@@ -1,0 +1,38 @@
+# Runs every test on GitHub each time code is pushed to main or a pull request is opened.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Uses the local development settings, same as running the tests on your own computer.
+      DJANGO_DEBUG: "True"
+
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check the project for problems
+        run: python manage.py check
+
+      - name: Check the models match the migrations
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Run tests
+        run: python manage.py test --verbosity 2
