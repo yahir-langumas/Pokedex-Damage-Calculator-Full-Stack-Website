@@ -26,7 +26,10 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt ruff==0.17.3 coverage==7.17.0
+
+      - name: Check the code for mistakes
+        run: ruff check --select E4,E7,E9,F --exclude pokedata/migrations .
 
       - name: Check the project for problems
         run: python manage.py check
@@ -35,4 +38,9 @@ jobs:
         run: python manage.py makemigrations --check --dry-run
 
       - name: Run tests
-        run: python manage.py test --verbosity 2
+        run: coverage run --source=pokedata --omit="pokedata/migrations/*,pokedata/tests.py" manage.py test --verbosity 2
+
+      - name: Show how much of the code the tests cover
+        run: |
+          coverage report
+          coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
