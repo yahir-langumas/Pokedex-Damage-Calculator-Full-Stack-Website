@@ -1,0 +1,88 @@
+<section class="calc-card side-card">
+  <div class="side-head">
+    <h2>{{ title }}</h2>
+    <div class="side-info" id="{{ side }}-info" data-live>
+      {% if details.species %}
+      <img src="{{ details.species.sprite }}" alt="{{ details.name }}" width="72" height="72" onerror="this.style.visibility='hidden'">
+      <div>
+        <div class="dex-number">#{{ details.species.pokedex_id }}</div>
+        <div class="type-badges">
+          {% for type in details.species.types %}<span class="type-badge type-{{ type }}">{{ type }}</span>{% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <label class="field">
+    <span>Pokémon</span>
+    {{ details.fields.pokemon }}
+  </label>
+
+  {% if side == "attacker" %}
+  <label class="field">
+    <span>Move</span>
+    <select name="move" id="id_move">
+      {% for name, label in moves %}<option value="{{ name }}"{% if name == selected_move %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  {% endif %}
+
+  <div class="field-row">
+    <label class="field">
+      <span>Ability</span>
+      <select name="{{ side }}_ability" id="id_{{ side }}_ability">
+        {% for name, label in details.abilities %}<option value="{{ name }}"{% if name == details.ability %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span>Item</span>
+      {{ details.fields.item }}
+    </label>
+  </div>
+
+  <div class="field-row level-row">
+    <label class="field">
+      <span>Level</span>
+      {{ details.fields.level }}
+    </label>
+    <label class="field">
+      <span>Nature</span>
+      {{ details.fields.nature }}
+    </label>
+  </div>
+
+  <div class="field-row">
+    <label class="field">
+      <span>Status</span>
+      {{ details.fields.status }}
+    </label>
+    <label class="field">
+      <span>Current HP %</span>
+      {{ details.fields.hp_percent }}
+    </label>
+  </div>
+
+  <table class="stat-table">
+    <thead>
+      <tr><th scope="col">Stat</th><th scope="col">Base</th><th scope="col">IVs</th><th scope="col">EVs</th><th scope="col">Stage</th><th scope="col">Total</th></tr>
+    </thead>
+    <tbody>
+      {% for row in details.rows %}
+      <tr>
+        <th scope="row">{{ row.label }}</th>
+        <td class="base" id="{{ side }}-base-{{ forloop.counter }}" data-live>{{ row.base }}</td>
+        <td>{{ row.iv }}</td>
+        <td>{{ row.ev }}</td>
+        <td>{% if row.boost is not None %}{{ row.boost }}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td class="total" id="{{ side }}-stat-{{ forloop.counter }}" data-live>
+          <span class="{% if row.nature == '+' %}up{% elif row.nature == '-' %}down{% endif %}">{{ row.stat }}{{ row.nature }}</span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="ev-total" id="{{ side }}-ev-total" data-live>
+    {% if details.ev_total is not None %}<span{% if details.ev_total > 510 %} class="over"{% endif %}>{{ details.ev_total }} / 510 EVs</span>{% endif %}
+  </div>
+</section>

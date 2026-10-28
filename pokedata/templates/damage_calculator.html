@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  .calc-wrap { max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  .calc-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.5rem 1rem; margin-bottom: 1.5rem; }
+  .calc-header h1 { font-size: 1.9rem; font-weight: 800; color: #222; margin: 0; }
+  .calc-sub { font-size: 0.9rem; color: #888; font-weight: 600; }
+  .calc-card { background: #ffffff; border: 1px solid #eee; border-radius: 14px; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); min-width: 0; }
+
+  /* Result */
+  .result-card { margin-bottom: 1.5rem; }
+  .result-line { margin: 0 0 1rem; color: #444; font-size: 0.95rem; line-height: 1.5; overflow-wrap: anywhere; }
+  .result-main { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem 1.5rem; }
+  .result-percent { font-size: 2.2rem; font-weight: 800; color: #202020; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .result-damage { color: #777; font-weight: 600; font-size: 0.95rem; margin-top: 0.2rem; font-variant-numeric: tabular-nums; }
+  .ko-chip { display: inline-block; font-weight: 800; font-size: 0.95rem; padding: 0.45rem 0.9rem; border-radius: 999px; background: #f0f0f3; color: #555; }
+  .ko-chip.ohko { background: #fde8e6; color: #b3261e; }
+  .ko-chip.multi { background: #fff3dc; color: #8a5300; }
+  .hp-bar { display: flex; height: 14px; background: #ececf0; border-radius: 999px; overflow: hidden; margin: 1.1rem 0 0.4rem; }
+  .hp-fill { height: 100%; }
+  .hp-fill.green { background: #4caf50; } .hp-fill.yellow { background: #e0b400; } .hp-fill.red { background: #e0533d; }
+  .hp-fill.range { opacity: 0.4; }
+  .hp-caption { font-size: 0.8rem; color: #888; font-weight: 600; }
+  .result-meta { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 1rem; }
+  .meta-chip { font-size: 0.75rem; font-weight: 700; color: #555; background: #f4f4f6; padding: 0.25rem 0.65rem; border-radius: 999px; text-transform: capitalize; }
+  .result-note { margin: 1rem 0 0; padding: 0.7rem 0.9rem; background: #f4f6fd; border-radius: 10px; color: #33467a; font-weight: 600; font-size: 0.9rem; }
+  .rolls { margin-top: 1rem; }
+  .rolls summary { cursor: pointer; font-weight: 700; font-size: 0.85rem; color: #2a5db0; }
+  .roll-list { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.6rem; font-variant-numeric: tabular-nums; }
+  .roll-list span { font-size: 0.8rem; font-weight: 700; color: #444; background: #f4f4f6; padding: 0.2rem 0.5rem; border-radius: 6px; }
+  .calc-errors { margin: 0; padding: 0.8rem 1rem 0.8rem 2rem; background: #fdecea; color: #8c1d18; border-radius: 10px; font-weight: 600; font-size: 0.9rem; }
+  .calc-errors li + li { margin-top: 0.25rem; }
+
+  /* Form */
+  .calc-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+  .side-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; min-height: 72px; margin-bottom: 0.75rem; }
+  .side-head h2, .field-card h2 { font-size: 1.15rem; font-weight: 800; color: #222; margin: 0; }
+  .side-info { display: flex; align-items: center; gap: 0.6rem; }
+  .side-info img { width: 72px; height: 72px; object-fit: contain; }
+  .dex-number { font-size: 0.75rem; font-weight: 700; color: #aaa; letter-spacing: 0.03em; margin-bottom: 0.3rem; }
+  .type-badges { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .type-badge { color: #fff; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.22rem 0.6rem; border-radius: 999px; }
+  .field { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.75rem; min-width: 0; }
+  .field > span { font-size: 0.75rem; font-weight: 700; color: #777; text-transform: uppercase; letter-spacing: 0.04em; }
+  .field-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.75rem; }
+  .level-row { grid-template-columns: 5rem minmax(0, 1fr); }
+  .calc-card input, .calc-card select { width: 100%; padding: 0.55rem 0.65rem; font: inherit; font-size: 0.92rem; color: #222; background: #fff; border: 2px solid #e5e5e5; border-radius: 10px; outline: none; transition: border-color 0.15s ease; }
+  .calc-card input:focus, .calc-card select:focus { border-color: #6890F0; }
+  .calc-card input[type="checkbox"] { width: auto; accent-color: #6890F0; }
+  .stat-table { width: 100%; border-collapse: collapse; margin-top: 0.4rem; font-variant-numeric: tabular-nums; }
+  .stat-table th, .stat-table td { padding: 0.2rem 0.15rem; text-align: center; font-size: 0.85rem; }
+  .stat-table thead th { font-size: 0.68rem; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat-table tbody th { text-align: left; font-weight: 700; color: #555; }
+  .stat-table td.base { color: #888; }
+  .stat-table td.total { font-weight: 800; color: #222; }
+  .stat-table .up { color: #c03028; } .stat-table .down { color: #2a5db0; }
+  .stat-table input, .stat-table select { padding: 0.3rem 0.2rem; font-size: 0.85rem; text-align: center; border-radius: 8px; }
+  .stat-table input { max-width: 3.6rem; }
+  .stat-table select { max-width: 3.8rem; }
+  .muted { color: #bbb; }
+  .ev-total { text-align: right; font-size: 0.78rem; font-weight: 700; color: #999; margin-top: 0.4rem; min-height: 1em; }
+  .ev-total .over { color: #b3261e; }
+  .check { display: flex; align-items: center; gap: 0.5rem; font-size: 0.92rem; font-weight: 600; color: #333; margin-bottom: 0.55rem; cursor: pointer; }
+  .field-card h3 { font-size: 0.75rem; font-weight: 700; color: #777; text-transform: uppercase; letter-spacing: 0.04em; margin: 1rem 0 0.6rem; }
+  .field-card h2 { margin-bottom: 1rem; }
+  .calc-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-top: 1.25rem; }
+  .btn { display: inline-block; padding: 0.75rem 1.5rem; border-radius: 10px; font: inherit; font-weight: 700; font-size: 0.95rem; text-decoration: none; cursor: pointer; border: 0; }
+  .btn-primary { background: #6890F0; color: #ffffff; box-shadow: 0 4px 14px rgba(104, 144, 240, 0.35); }
+  .btn-secondary { background: #ffffff; color: #333; border: 2px solid #e5e5e5; }
+
+  @media (max-width: 960px) {
+    .calc-grid { grid-template-columns: minmax(0, 1fr); }
+    .field-card { order: 3; }
+  }
+  @media (max-width: 480px) {
+    .calc-wrap { padding: 1.25rem 1rem 3rem; }
+    .calc-card { padding: 1rem; }
+    .result-percent { font-size: 1.8rem; }
+  }
+
+  /* Official Pokemon type colors */
+  .type-normal   { background: #A8A878; }
+  .type-fire     { background: #F08030; }
+  .type-water    { background: #6890F0; }
+  .type-electric { background: #F8D030; color: #4a3f00; }
+  .type-grass    { background: #78C850; }
+  .type-ice      { background: #98D8D8; color: #14514f; }
+  .type-fighting { background: #C03028; }
+  .type-poison   { background: #A040A0; }
+  .type-ground   { background: #E0C068; color: #4a3a00; }
+  .type-flying   { background: #A890F0; }
+  .type-psychic  { background: #F85888; }
+  .type-bug      { background: #A8B820; }
+  .type-rock     { background: #B8A038; }
+  .type-ghost    { background: #705898; }
+  .type-dragon   { background: #7038F8; }
+  .type-dark     { background: #705848; }
+  .type-steel    { background: #B8B8D0; color: #3a3a48; }
+  .type-fairy    { background: #EE99AC; color: #5c1f2c; }
+  .type-typeless { background: #9a9aa6; }
+</style>
+
+<div class="calc-wrap">
+  <div class="calc-header">
+    <h1>Damage Calculator</h1>
+    <span class="calc-sub">Gen 9 singles · Level 50 by default</span>
+  </div>
+
+  <section class="calc-card result-card" id="calc-result" data-live aria-live="polite">
+    {% if form.errors %}
+    <ul class="calc-errors">
+      {% for error in form.error_list %}<li>{{ error }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if result %}
+    <p class="result-line">{{ description }}</p>
+    <div class="result-main">
+      <div>
+        <div class="result-percent">{{ result.min_percent }} – {{ result.max_percent }}%</div>
+        <div class="result-damage">{{ result.min_damage }} – {{ result.max_damage }} dmg · {{ result.defender_hp }} / {{ result.defender_max_hp }} HP</div>
+      </div>
+      <span class="ko-chip{% if 'OHKO' in result.ko_chance %} ohko{% elif result.ko_chance != 'No damage' %} multi{% endif %}">{{ result.ko_chance }}</span>
+    </div>
+    <div class="hp-bar" role="img" aria-label="{{ hp_bar.after_max }}% to {{ hp_bar.after_min }}% HP left after the hit">
+      <div class="hp-fill {{ hp_bar.color }}" style="width: {{ hp_bar.after_max }}%"></div>
+      <div class="hp-fill range {{ hp_bar.color }}" style="width: {{ hp_bar.range }}%"></div>
+    </div>
+    <div class="hp-caption">{{ hp_bar.after_max }}% – {{ hp_bar.after_min }}% HP left</div>
+    <div class="result-meta">
+      <span class="type-badge type-{{ result.move_type }}">{{ result.move_type }}</span>
+      <span class="meta-chip">{{ result.category }}</span>
+      {% if result.base_power %}<span class="meta-chip">{{ result.base_power }} BP</span>{% endif %}
+      <span class="meta-chip">{{ effectiveness }}</span>
+      {% if result.hits > 1 %}<span class="meta-chip">{{ result.hits }} hits</span>{% endif %}
+      {% if result.critical_hit %}<span class="meta-chip">Critical hit</span>{% endif %}
+    </div>
+    {% if result.note %}<p class="result-note">{{ result.note }}</p>{% endif %}
+    <details class="rolls">
+      <summary>All 16 damage rolls</summary>
+      <div class="roll-list">{% for roll in result.rolls %}<span>{{ roll }}</span>{% endfor %}</div>
+    </details>
+    {% endif %}
+  </section>
+
+  <form id="calc-form" method="get" action="{% url 'damage_calculator' %}">
+    <div class="calc-grid">
+      {% include "calc_side.html" with side="attacker" title="Attacker" details=attacker %}
+
+      <section class="calc-card field-card">
+        <h2>Field</h2>
+        <label class="field">
+          <span>Weather</span>
+          {{ form.weather }}
+        </label>
+        <label class="field">
+          <span>Terrain</span>
+          {{ form.terrain }}
+        </label>
+        <h3>Attacker</h3>
+        <label class="check">{{ form.critical_hit }} Critical hit</label>
+        <h3>Defender's side</h3>
+        <label class="check">{{ form.reflect }} Reflect</label>
+        <label class="check">{{ form.light_screen }} Light Screen</label>
+        <label class="check">{{ form.aurora_veil }} Aurora Veil</label>
+      </section>
+
+      {% include "calc_side.html" with side="defender" title="Defender" details=defender %}
+    </div>
+    <div class="calc-actions">
+      <button type="submit" class="btn btn-primary">Calculate</button>
+      <a class="btn btn-secondary" href="{% url 'damage_calculator' %}">Reset</a>
+    </div>
+  </form>
+</div>
+
+<datalist id="pokemon-names">
+  {% for name in species_names %}<option value="{{ name }}">{% endfor %}
+</datalist>
+<datalist id="item-names">
+  {% for name, label in items %}<option value="{{ name }}">{{ label }}</option>{% endfor %}
+</datalist>
+
+<script>
+  (function () {
+    const form = document.getElementById("calc-form");
+    const optionsUrl = "{% url 'pokemon_options' 'POKEMON' %}";
+    const pokemonNames = new Set(Array.from(document.querySelectorAll("#pokemon-names option"), function (option) { return option.value; }));
+    let timer = null;
+    let latest = 0;
+
+    // Reruns the calc without reloading the page, then swaps in the new result, sprites and stats.
+    async function recalculate() {
+      const params = new URLSearchParams(new FormData(form)).toString();
+      const request = ++latest;
+      const response = await fetch(form.action + "?" + params);
+      if (request !== latest) return;
+      const page = new DOMParser().parseFromString(await response.text(), "text/html");
+      document.querySelectorAll("[data-live]").forEach(function (element) {
+        const fresh = page.getElementById(element.id);
+        if (fresh) element.innerHTML = fresh.innerHTML;
+      });
+      history.replaceState(null, "", "?" + params);
+    }
+
+    // Waits until typing stops before recalculating.
+    function recalculateSoon() {
+      clearTimeout(timer);
+      timer = setTimeout(recalculate, 250);
+    }
+
+    // Swaps a dropdown's options, keeping the current pick if the new list has it.
+    function fillSelect(select, options) {
+      const current = select.value;
+      select.innerHTML = "";
+      options.forEach(function (option) { select.add(new Option(option.label, option.name)); });
+      if (options.some(function (option) { return option.name === current; })) select.value = current;
+    }
+
+    // Loads a Pokémon's abilities (and moves for the attacker), then recalculates.
+    async function loadPokemon(side) {
+      const name = document.getElementById("id_" + side + "_pokemon").value.trim().toLowerCase();
+      if (pokemonNames.has(name)) {
+        const response = await fetch(optionsUrl.replace("POKEMON", encodeURIComponent(name)));
+        if (response.ok) {
+          const data = await response.json();
+          fillSelect(document.getElementById("id_" + side + "_ability"), data.abilities);
+          if (side === "attacker") fillSelect(document.getElementById("id_move"), data.moves);
+        }
+      }
+      recalculate();
+    }
+
+    form.addEventListener("change", function (event) {
+      const name = event.target.name || "";
+      if (name.endsWith("_pokemon")) loadPokemon(name.split("_")[0]);
+      else if (event.target.type !== "number") recalculate();
+    });
+    form.addEventListener("input", function (event) {
+      if (event.target.type === "number") recalculateSoon();
+    });
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      recalculate();
+    });
+  })();
+</script>
+{% endblock %}

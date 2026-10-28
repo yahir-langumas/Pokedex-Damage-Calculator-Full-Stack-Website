@@ -1,5 +1,9 @@
+from unittest.mock import Mock, patch
+import requests
+from django.core.management import call_command
 from django.test import TestCase
-from pokedata.models import Species, Moves
+from django.urls import reverse
+from pokedata.models import Learnset, Moves, Species, Type
 from pokedata.damage_calculator import DamageCalculator, apply_stage, chain_modifiers, damage_rolls, ko_chance_text, modifier_from, poke_round, to_4096
 from pokedata.stats import calculate_stats, make_build
 
@@ -1568,3 +1572,340 @@ class MathHelperTests(TestCase):
         self.assertEqual(damage_rolls(100, 4096, 2, False, 4096)[-1], 200)
         self.assertEqual(damage_rolls(100, 4096, 1, True, 4096)[-1], 50)
         self.assertEqual(damage_rolls(1, 4096, 0.25, False, 4096), [1] * 16)
+
+
+# Tests for the commands that import data from PokeAPI. requests.get is faked, so no real API calls are made.
+
+STAT_NAMES = ["hp", "attack", "defense", "special-attack", "special-defense", "speed"]
+
+
+# A fake PokeAPI response that returns the given JSON. Pass error=True to make raise_for_status fail like a 404 would.
+def fake_response(data, error=False):
+    response = Mock()
+    response.json.return_value = data
+    if error:
+        response.raise_for_status.side_effect = requests.HTTPError("404 Not Found")
+    return response
+
+
+# Runs an import command with requests.get faked. fake(key) builds the normal response, special = {key: response} for ones that need real data.
+# The key is the end of the URL, like "fire" or "25". Returns every (url, timeout) the command asked for.
+def run_import(command, fake, special=None):
+    special = special or {}
+    with patch(f"pokedata.management.commands.{command}.requests.get") as get:
+        get.side_effect = lambda url, timeout: special.get(url.rstrip("/").split("/")[-1]) or fake_response(fake(url.rstrip("/").split("/")[-1]))
+        call_command(command)
+    return [(call.args[0], call.kwargs["timeout"]) for call in get.call_args_list]
+
+
+# A fake /type/ response. relations = {"double_damage_to": ["grass"], ...}. Anything left out is empty.
+def fake_type(name, relations=None):
+    keys = ["double_damage_from", "double_damage_to", "half_damage_from", "half_damage_to", "no_damage_from", "no_damage_to"]
+    relations = relations or {}
+    return {"name": name, "damage_relations": {key: [{"name": other, "url": ""} for other in relations.get(key, [])] for key in keys}}
+
+
+# A fake /move/ response. Anything not given gets a plain default.
+def fake_move(move_id, **changes):
+    move = {
+        "id": int(move_id), "name": f"move-{move_id}", "power": 50, "accuracy": 100, "priority": 0, "pp": 10, "effect_chance": None,
+        "damage_class": {"name": "physical"}, "type": {"name": "normal"}, "stat_changes": [],
+        "meta": {"ailment": {"name": "none"}, "category": {"name": "damage"}, "min_hits": None, "max_hits": None, "min_turns": None, "max_turns": None,
+                 "drain": 0, "healing": 0, "crit_rate": 0, "ailment_chance": 0, "flinch_chance": 0, "stat_chance": 0},
+    }
+    move.update(changes)
+    return move
+
+
+# A fake /pokemon/ response. stats = the 6 base stats in order. moves = [(move name, [version groups])].
+def fake_pokemon(pokedex_id, name=None, types=("normal",), abilities=("run-away",), stats=(50, 50, 50, 50, 50, 50), moves=()):
+    return {
+        "id": int(pokedex_id), "name": name or f"pokemon-{pokedex_id}", "height": 10, "weight": 100, "base_experience": 60,
+        "types": [{"slot": slot, "type": {"name": type_name}} for slot, type_name in enumerate(types, 1)],
+        "abilities": [{"ability": {"name": ability}} for ability in abilities],
+        "stats": [{"base_stat": value, "stat": {"name": stat}} for stat, value in zip(STAT_NAMES, stats)],
+        "sprites": {"other": {"official-artwork": {"front_default": f"https://example.com/{pokedex_id}.png"}}},
+        "moves": [{"move": {"name": move}, "version_group_details": [{"version_group": {"name": group}} for group in groups]} for move, groups in moves],
+    }
+
+
+class ImportTypesTests(TestCase):
+
+    # Runs the import once with real data for Fire. Each test checks what it saved.
+    @classmethod
+    def setUpTestData(cls):
+        fire = fake_type("fire", {"double_damage_to": ["grass", "ice", "bug", "steel"], "half_damage_from": ["fire", "grass"], "double_damage_from": ["water", "ground", "rock"]})
+        cls.requests_made = run_import("import_types", fake_type, {"fire": fake_response(fire)})
+
+    # All 18 types get saved.
+    def test_saves_all_types(self):
+        self.assertEqual(Type.objects.count(), 18)
+        self.assertTrue(Type.objects.filter(name="fairy").exists())
+
+    # Each type's damage relations get saved as lists of type names.
+    def test_damage_relations(self):
+        type_data = Type.objects.get(name="fire").type_data
+        self.assertEqual(type_data["double_damage_to"], ["grass", "ice", "bug", "steel"])
+        self.assertEqual(type_data["double_damage_from"], ["water", "ground", "rock"])
+        self.assertEqual(type_data["no_damage_to"], [])
+        self.assertEqual(len(type_data), 6)
+
+    # It asks PokeAPI for each type by name, with a 10 second timeout.
+    def test_api_calls(self):
+        self.assertEqual(len(self.requests_made), 18)
+        self.assertIn(("https://pokeapi.co/api/v2/type/fire/", 10), self.requests_made)
+
+    # Running it again doesn't make duplicates.
+    def test_run_twice(self):
+        run_import("import_types", fake_type)
+        self.assertEqual(Type.objects.count(), 18)
+
+    # If PokeAPI gives an error, the import stops there. Types saved before the error stay saved.
+    def test_api_error(self):
+        Type.objects.all().delete()
+        with self.assertRaises(requests.HTTPError):
+            run_import("import_types", fake_type, {"poison": fake_response({}, error=True)})
+        self.assertEqual(sorted(Type.objects.values_list("name", flat=True)), ["fighting", "flying", "normal"])
+
+
+class ImportMovesTests(TestCase):
+
+    # Runs the import once with a few real moves mixed in. Each test checks what it saved.
+    @classmethod
+    def setUpTestData(cls):
+        paralysis = {**fake_move(85)["meta"], "ailment": {"name": "paralysis"}, "category": {"name": "damage+ailment"}, "ailment_chance": 10}
+        special = {
+            "89": fake_response(fake_move(89, name="earthquake", power=100, type={"name": "ground"})),
+            "14": fake_response(fake_move(14, name="swords-dance", power=None, accuracy=None, pp=20, damage_class={"name": "status"}, stat_changes=[{"change": 2, "stat": {"name": "attack"}}])),
+            "98": fake_response(fake_move(98, name="quick-attack", power=40, priority=1, pp=30)),
+            "85": fake_response(fake_move(85, name="thunderbolt", power=90, effect_chance=10, damage_class={"name": "special"}, meta=paralysis)),
+            "331": fake_response(fake_move(331, name="bullet-seed", power=25, meta={**fake_move(331)["meta"], "min_hits": 2, "max_hits": 5})),
+            "1": fake_response(fake_move(1, meta=None)),
+            "2": fake_response(fake_move(2, meta={**fake_move(2)["meta"], "ailment": None})),
+        }
+        cls.requests_made = run_import("import_moves", fake_move, special)
+
+    # All 919 moves get saved.
+    def test_saves_all_moves(self):
+        self.assertEqual(Moves.objects.count(), 919)
+        self.assertEqual(Moves.objects.get(move_id=919).name, "move-919")
+
+    # A move's type, category, power, accuracy, PP, priority and stat changes get saved.
+    def test_move_fields(self):
+        earthquake = Moves.objects.get(name="earthquake")
+        self.assertEqual((earthquake.move_id, earthquake.type, earthquake.damage_class, earthquake.power, earthquake.accuracy, earthquake.pp), (89, "ground", "physical", 100, 100, 10))
+        swords_dance = Moves.objects.get(name="swords-dance")
+        self.assertEqual((swords_dance.damage_class, swords_dance.power, swords_dance.accuracy), ("status", None, None))
+        self.assertEqual(swords_dance.stat_changes, [{"change": 2, "stat": {"name": "attack"}}])
+        self.assertEqual(Moves.objects.get(name="quick-attack").priority, 1)
+
+    # The move's meta (ailment, hits, drain, crit rate, etc.) gets flattened into plain values.
+    def test_meta(self):
+        thunderbolt = Moves.objects.get(name="thunderbolt")
+        self.assertEqual((thunderbolt.meta["ailment"], thunderbolt.meta["category"], thunderbolt.meta["ailment_chance"], thunderbolt.effect_chance), ("paralysis", "damage+ailment", 10, 10))
+        self.assertEqual(len(thunderbolt.meta), 12)
+        bullet_seed = Moves.objects.get(name="bullet-seed")
+        self.assertEqual((bullet_seed.meta["min_hits"], bullet_seed.meta["max_hits"]), (2, 5))
+
+    # Moves with no meta (like Z-Moves) save None, and a missing ailment saves None.
+    def test_missing_meta(self):
+        self.assertIsNone(Moves.objects.get(move_id=1).meta)
+        self.assertIsNone(Moves.objects.get(move_id=2).meta["ailment"])
+
+    # It asks PokeAPI for each move by its number, with a 10 second timeout.
+    def test_api_calls(self):
+        self.assertEqual(len(self.requests_made), 919)
+        self.assertIn(("https://pokeapi.co/api/v2/move/919/", 10), self.requests_made)
+
+    # Running it again doesn't make duplicates.
+    def test_run_twice(self):
+        run_import("import_moves", fake_move)
+        self.assertEqual(Moves.objects.count(), 919)
+
+
+class ImportSpeciesTests(TestCase):
+
+    # Runs the import once with real data for Charizard. Each test checks what it saved.
+    @classmethod
+    def setUpTestData(cls):
+        charizard = fake_pokemon(6, "charizard", types=("fire", "flying"), abilities=("blaze", "solar-power"), stats=(78, 84, 78, 109, 85, 100))
+        cls.requests_made = run_import("import_species", fake_pokemon, {"6": fake_response(charizard)})
+
+    # All 1025 Pokémon get saved.
+    def test_saves_all_species(self):
+        self.assertEqual(Species.objects.count(), 1025)
+        self.assertEqual(Species.objects.get(pokedex_id=1025).name, "pokemon-1025")
+
+    # Types, abilities, base stats, size and sprite get saved. Charizard's base stats add up to 534.
+    def test_species_fields(self):
+        charizard = Species.objects.get(name="charizard")
+        self.assertEqual((charizard.pokedex_id, charizard.types, charizard.abilities), (6, ["fire", "flying"], ["blaze", "solar-power"]))
+        self.assertEqual(charizard.stats, {"hp": 78, "attack": 84, "defense": 78, "special-attack": 109, "special-defense": 85, "speed": 100})
+        self.assertEqual(charizard.total_stats, 534)
+        self.assertEqual((charizard.height, charizard.weight, charizard.base_experience), (10, 100, 60))
+        self.assertEqual(charizard.sprite, "https://example.com/6.png")
+
+    # It asks PokeAPI for each Pokémon by its pokedex number, with a 10 second timeout.
+    def test_api_calls(self):
+        self.assertEqual(len(self.requests_made), 1025)
+        self.assertIn(("https://pokeapi.co/api/v2/pokemon/25/", 10), self.requests_made)
+
+    # Running it again doesn't make duplicates.
+    def test_run_twice(self):
+        run_import("import_species", fake_pokemon)
+        self.assertEqual(Species.objects.count(), 1025)
+
+    # If PokeAPI gives an error, the import stops there. Pokémon saved before the error stay saved.
+    def test_api_error(self):
+        Species.objects.all().delete()
+        with self.assertRaises(requests.HTTPError):
+            run_import("import_species", fake_pokemon, {"4": fake_response({}, error=True)})
+        self.assertEqual(Species.objects.count(), 3)
+
+
+class ImportLearnsetTests(TestCase):
+
+    # Runs the import once with real moves for Pikachu and Garchomp. Each test checks what it saved.
+    @classmethod
+    def setUpTestData(cls):
+        pikachu = fake_pokemon(25, "pikachu", moves=[("thunderbolt", ["scarlet-violet", "sword-shield"]), ("volt-tackle", ["scarlet-violet"]), ("thunder-punch", ["sword-shield"])])
+        garchomp = fake_pokemon(445, "garchomp", moves=[("earthquake", ["scarlet-violet", "scarlet-violet"]), ("dragon-claw", ["scarlet-violet"])])
+        cls.requests_made = run_import("import_learnset", fake_pokemon, {"25": fake_response(pikachu), "445": fake_response(garchomp)})
+
+    # A learnset gets saved for all 1025 Pokémon.
+    def test_saves_all_learnsets(self):
+        self.assertEqual(Learnset.objects.count(), 1025)
+        self.assertEqual(Learnset.objects.get(species_id=25).name, "pikachu")
+
+    # Only moves learnable in Scarlet and Violet get saved.
+    def test_scarlet_violet_only(self):
+        self.assertEqual(sorted(Learnset.objects.get(species_id=25).moves), ["thunderbolt", "volt-tackle"])
+
+    # A move learned more than one way in Scarlet and Violet (level up and TM) only shows up once.
+    def test_no_duplicate_moves(self):
+        self.assertEqual(sorted(Learnset.objects.get(species_id=445).moves), ["dragon-claw", "earthquake"])
+
+    # A Pokémon with no Scarlet and Violet moves gets an empty learnset.
+    def test_empty_learnset(self):
+        self.assertEqual(Learnset.objects.get(species_id=1).moves, [])
+
+    # It asks PokeAPI for each Pokémon by its pokedex number, with a 10 second timeout.
+    def test_api_calls(self):
+        self.assertEqual(len(self.requests_made), 1025)
+        self.assertIn(("https://pokeapi.co/api/v2/pokemon/1/", 10), self.requests_made)
+
+    # Running it again doesn't make duplicates.
+    def test_run_twice(self):
+        run_import("import_learnset", fake_pokemon)
+        self.assertEqual(Learnset.objects.count(), 1025)
+
+
+# Tests for the damage calculator page and the endpoint that fills in its dropdowns.
+class CalcPageTests(TestCase):
+    fixtures = ["pokedata"]
+
+    # Loads the calc page with the given form values.
+    def get(self, **values):
+        return self.client.get(reverse("damage_calculator"), values)
+
+    # With nothing picked, the page shows Garchomp's Earthquake on Snorlax.
+    def test_default_matchup(self):
+        response = self.get()
+        self.assertEqual(response.status_code, 200)
+        result = response.context["result"]
+        self.assertEqual((result["min_damage"], result["max_damage"]), (100, 118))
+        self.assertContains(response, "Possible 2HKO")
+
+    # The page gives the exact same result as calling calculate() directly.
+    def test_matches_calculate(self):
+        response = self.get(attacker_pokemon="machamp", move="close-combat", defender_pokemon="snorlax")
+        self.assertEqual(response.context["result"], make_calc("machamp", "snorlax", "close-combat").calculate())
+
+    # EVs and natures from the form go into the builds.
+    def test_evs_and_nature(self):
+        response = self.get(attacker_pokemon="garchomp", move="earthquake", defender_pokemon="heatran", attacker_ev_hp=4, attacker_ev_atk=252, attacker_ev_spe=252, attacker_nature="jolly", defender_ev_hp=4)
+        result = response.context["result"]
+        self.assertEqual((result["min_damage"], result["max_damage"]), (328, 388))
+
+    # Stat stages and crits from the form.
+    def test_boosts_and_crit(self):
+        response = self.get(attacker_pokemon="machamp", move="close-combat", defender_pokemon="snorlax", attacker_boost_atk=2, critical_hit="on")
+        result = response.context["result"]
+        self.assertEqual((result["min_damage"], result["max_damage"]), (716, 846))
+
+    # Weather, screens, abilities and items from the form.
+    def test_field_abilities_and_items(self):
+        sun = self.get(attacker_pokemon="charizard", move="flamethrower", defender_pokemon="venusaur", weather="sun").context["result"]
+        self.assertEqual((sun["min_damage"], sun["max_damage"]), (168, 198))
+        reflect = self.get(attacker_pokemon="machamp", move="close-combat", defender_pokemon="snorlax", reflect="on").context["result"]
+        self.assertEqual((reflect["min_damage"], reflect["max_damage"]), (120, 142))
+        band = self.get(attacker_pokemon="azumarill", move="aqua-tail", defender_pokemon="snorlax", attacker_ability="huge-power", attacker_item="choice-band").context["result"]
+        self.assertEqual((band["min_damage"], band["max_damage"]), (126, 148))
+
+    # Current HP % sets the defender's HP. Half of Snorlax's 235 HP is 117, so Earthquake now has a chance to OHKO.
+    def test_hp_percent(self):
+        result = self.get(defender_hp_percent=50).context["result"]
+        self.assertEqual(result["defender_hp"], 117)
+        self.assertEqual(result["ko_chance"], "12.5% chance to OHKO")
+
+    # The summary line reads like Smogon's, with EVs, nature, item, level, stat stages, weather and crits.
+    def test_description(self):
+        band = self.get(attacker_pokemon="garchomp", move="earthquake", defender_pokemon="heatran", attacker_ev_atk=252, attacker_nature="adamant", attacker_item="choice-band", defender_ev_hp=4)
+        self.assertEqual(band.context["description"], "252+ Atk Choice Band Garchomp Earthquake vs. 4 HP / 0 Def Heatran: 540-636 (323.3 - 380.8%) -- Guaranteed OHKO")
+        sun = self.get(attacker_pokemon="charizard", move="flamethrower", defender_pokemon="venusaur", weather="sun", critical_hit="on", attacker_boost_spa=1, attacker_level=30)
+        self.assertEqual(sun.context["description"], "+1 0 SpA Lvl 30 Charizard Flamethrower vs. 0 HP / 0 SpD Venusaur in Sun on a critical hit: 146-174 (94.1 - 112.2%) -- 68.8% chance to OHKO")
+
+    # Pokémon, moves and items that don't exist show an error instead of a result.
+    def test_bad_names(self):
+        for values in ({"attacker_pokemon": "notamon"}, {"move": "growl"}, {"attacker_item": "banana"}):
+            response = self.get(**values)
+            self.assertEqual(response.status_code, 200)
+            self.assertIsNone(response.context["result"])
+            self.assertTrue(response.context["form"].error_list())
+
+    # EVs over 252, more than 510 total EVs, levels over 50 and abilities the Pokémon can't have show errors.
+    def test_bad_builds(self):
+        self.assertIn("Attacker Spe EVs: Ensure this value is less than or equal to 252.", self.get(attacker_ev_spe=300).context["form"].error_list())
+        self.assertIn("Attacker: EVs can't add up to more than 510.", self.get(attacker_ev_hp=252, attacker_ev_atk=252, attacker_ev_spe=252).context["form"].error_list())
+        self.assertIn("Attacker level: Ensure this value is less than or equal to 50.", self.get(attacker_level=60).context["form"].error_list())
+        self.assertIn("Attacker ability: Garchomp can't have Levitate.", self.get(attacker_ability="levitate").context["form"].error_list())
+
+    # The options endpoint gives a Pokémon's abilities and only the moves it learns that do damage.
+    def test_pokemon_options(self):
+        data = self.client.get(reverse("pokemon_options", args=["garchomp"])).json()
+        self.assertEqual([ability["name"] for ability in data["abilities"]], ["sand-veil", "rough-skin"])
+        moves = [move["name"] for move in data["moves"]]
+        self.assertIn("earthquake", moves)
+        self.assertNotIn("swords-dance", moves)
+        self.assertEqual(moves, sorted(moves))
+
+    # The options endpoint 404s for a Pokémon that doesn't exist.
+    def test_pokemon_options_unknown(self):
+        self.assertEqual(self.client.get(reverse("pokemon_options", args=["notamon"])).status_code, 404)
+
+    # The nav bar links to the calc page.
+    def test_nav_link(self):
+        self.assertContains(self.client.get(reverse("home")), f'href="{reverse("damage_calculator")}"')
+
+
+# Tests for the home page and the nav bar.
+class HomePageTests(TestCase):
+    fixtures = ["pokedata"]
+
+    # The home page shows how many Pokémon, moves and held items there are.
+    def test_counts(self):
+        response = self.client.get(reverse("home"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual((response.context["species_count"], response.context["moves_count"], response.context["items_count"]), ("1,025", "919", "218"))
+
+    # The home page links to the damage calculator and the Pokédex.
+    def test_links(self):
+        response = self.client.get(reverse("home"))
+        self.assertContains(response, f'href="{reverse("damage_calculator")}"')
+        self.assertContains(response, f'href="{reverse("pokemon_table")}"')
+
+    # The team builder isn't done yet, so it says coming soon and nothing links to it.
+    def test_team_builder_coming_soon(self):
+        response = self.client.get(reverse("home"))
+        self.assertContains(response, "Coming soon")
+        self.assertNotContains(response, f'href="{reverse("team_builder")}"')
