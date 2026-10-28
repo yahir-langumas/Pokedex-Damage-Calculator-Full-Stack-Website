@@ -4,13 +4,15 @@
 
 A full-stack Django web app for calculating Pokémon battle damage and browsing the Pokédex, built on [PokeAPI](https://pokeapi.co/) data. Pick an attacker, a defender and a move to see all 16 damage rolls, how much HP it takes and the chance to KO, using real Gen 9 battle mechanics.
 
+**Live site:** coming soon — see the [roadmap](#roadmap).
+
 ![The damage calculator updating live as Life Orb, a critical hit and a new defender are picked](docs/images/damage-calculator.gif)
 
 ## About
 
 This project pulls Pokémon species, moves, learnsets, and type matchups from PokeAPI into a local database, then uses that data to power a damage calculator and a browsable Pokédex. The damage engine models real battle mechanics — abilities, held items, weather, terrain, status conditions, stat stages, screens, and real stats from EVs, IVs, natures, and levels.
 
-The engine was checked against [Smogon's damage calculator](https://calc.pokemonshowdown.com/) on over 40,000 random matchups and matches it roll for roll, apart from a few deliberate differences where it follows the games instead (like one-hit KO moves).
+Every full damage result in the tests was checked roll for roll against [Smogon's damage calculator](https://calc.pokemonshowdown.com/).
 
 ## Features
 
@@ -21,7 +23,7 @@ The engine was checked against [Smogon's damage calculator](https://calc.pokemon
 - **Pokédex** — search all 1,025 Pokémon by name to see their types and base stat totals. Click any Pokémon for quick links to its Bulbapedia page, its Smogon sets, and its Limitless VGC tournament results.
 - **Moves page** (`/moves/`) — every move with its type, category, power, accuracy, and PP.
 
-The team builder is coming soon.
+The team builder is next — see the [roadmap](#roadmap).
 
 ![The damage calculator showing Life Orb Garchomp's Earthquake against Kingambit](docs/images/damage-calculator.png)
 
@@ -81,10 +83,23 @@ python manage.py test
 
 GitHub Actions runs every test on each push and pull request.
 
-## Data & Attribution
+## Credits & Attribution
 
-All Pokémon data is sourced from [PokeAPI](https://pokeapi.co/). This is a personal project built for learning purposes and is not affiliated with or endorsed by Nintendo, Game Freak, or The Pokémon Company.
+- **[PokeAPI](https://pokeapi.co/)** — all of the Pokémon data and sprite images.
+- **[Smogon's damage calculator](https://calc.pokemonshowdown.com/)** ([source on GitHub](https://github.com/smogon/damage-calc)) — the damage formula here is based on Smogon's open-source calculator, and its results were used to check this calculator's numbers. Smogon's damage calculator is MIT licensed, Copyright (c) 2013-2025 Honko and other contributors ([license](https://github.com/smogon/damage-calc/blob/master/LICENSE)).
+- **[Bulbapedia](https://bulbapedia.bulbagarden.net/)** — reference for how abilities and held items work in battle.
 
-## Status
+This is a personal project and is not affiliated with or endorsed by Nintendo, Game Freak, The Pokémon Company, or Smogon.
 
-Actively in progress. The data pipeline, damage calculator, Pokédex, and moves page are done, with 296 tests running on every push. Next up: the team builder, then deploying with Docker on AWS.
+## Roadmap
+
+Actively in progress.
+
+- [x] Damage engine — the full Gen 9 damage formula, all 314 abilities, and all 218 held items
+- [x] Damage calculator page with live results and shareable links
+- [x] Pokédex and moves page
+- [x] 296 tests running on every push with GitHub Actions
+- [ ] **Going live** — deploy with Docker on AWS, with the link at the top of this page
+- [ ] **Team builder** — build a team of six and check its matchups with the damage calculator
+- [ ] **Multi-hit moves** — pick how many times 2–5 hit moves hit (they count as 3 hits for now)
+- [ ] **Accounts and saved teams** — sign up and log in to save your teams and come back to them

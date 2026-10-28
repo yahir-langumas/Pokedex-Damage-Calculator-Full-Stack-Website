@@ -66,7 +66,6 @@
   .field-card h2 { margin-bottom: 1rem; }
   .calc-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-top: 1.25rem; }
   .btn { display: inline-block; padding: 0.75rem 1.5rem; border-radius: 10px; font: inherit; font-weight: 700; font-size: 0.95rem; text-decoration: none; cursor: pointer; border: 0; }
-  .btn-primary { background: #6890F0; color: #ffffff; box-shadow: 0 4px 14px rgba(104, 144, 240, 0.35); }
   .btn-secondary { background: #ffffff; color: #333; border: 2px solid #e5e5e5; }
 
   @media (max-width: 960px) {
@@ -168,7 +167,6 @@
       {% include "calc_side.html" with side="defender" title="Defender" details=defender %}
     </div>
     <div class="calc-actions">
-      <button type="submit" class="btn btn-primary">Calculate</button>
       <a class="btn btn-secondary" href="{% url 'damage_calculator' %}">Reset</a>
     </div>
   </form>
@@ -186,6 +184,7 @@
     const form = document.getElementById("calc-form");
     const optionsUrl = "{% url 'pokemon_options' 'POKEMON' %}";
     const pokemonNames = new Set(Array.from(document.querySelectorAll("#pokemon-names option"), function (option) { return option.value; }));
+    const MAX_TOTAL_EVS = 510;
     let timer = null;
     let latest = 0;
 
@@ -207,6 +206,23 @@
     function recalculateSoon() {
       clearTimeout(timer);
       timer = setTimeout(recalculate, 250);
+    }
+
+    // Keeps a number box between its min and max (252 for EVs, 31 for IVs, etc.) and keeps each side's EVs at 510 total or less.
+    function keepInLimits(input) {
+      if (input.value === "") return;
+      let value = Math.round(Number(input.value));
+      if (input.min !== "") value = Math.max(value, Number(input.min));
+      if (input.max !== "") value = Math.min(value, Number(input.max));
+      const ev = input.name.match(/^(attacker|defender)_ev_/);
+      if (ev) {
+        let others = 0;
+        form.querySelectorAll("input[name^='" + ev[1] + "_ev_']").forEach(function (box) {
+          if (box !== input) others += Number(box.value) || 0;
+        });
+        value = Math.min(value, Math.max(0, MAX_TOTAL_EVS - others));
+      }
+      if (String(value) !== input.value) input.value = value;
     }
 
     // Swaps a dropdown's options, keeping the current pick if the new list has it.
@@ -237,11 +253,10 @@
       else if (event.target.type !== "number") recalculate();
     });
     form.addEventListener("input", function (event) {
-      if (event.target.type === "number") recalculateSoon();
-    });
-    form.addEventListener("submit", function (event) {
-      event.preventDefault();
-      recalculate();
+      if (event.target.type === "number") {
+        keepInLimits(event.target);
+        recalculateSoon();
+      }
     });
   })();
 </script>
