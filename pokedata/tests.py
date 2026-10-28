@@ -1904,7 +1904,7 @@ class HomePageTests(TestCase):
         self.assertContains(response, f'href="{reverse("damage_calculator")}"')
         self.assertContains(response, f'href="{reverse("pokemon_table")}"')
 
-    # The team builder isn't done yet, so it says coming soon and nothing links to it.
+    # The team builder isn't done yet.
     def test_team_builder_coming_soon(self):
         response = self.client.get(reverse("home"))
         self.assertContains(response, "Coming soon")

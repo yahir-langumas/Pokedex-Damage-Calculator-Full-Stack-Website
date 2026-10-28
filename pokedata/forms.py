@@ -44,7 +44,7 @@ TERRAIN_CHOICES = [("", "None"), ("electric-terrain", "Electric"), ("grassy-terr
 BOOST_CHOICES = [(stage, f"{stage:+d}" if stage else "0") for stage in range(6, -7, -1)]
 
 # The matchup the page shows before anything is picked.
-DEFAULT_MATCHUP = {"attacker_pokemon": "arceus", "defender_pokemon": "rattata", "move": "quick-attack"}
+DEFAULT_MATCHUP = {"attacker_pokemon": "garchomp", "defender_pokemon": "snorlax", "move": "earthquake"}
 
 
 def pretty(name):
