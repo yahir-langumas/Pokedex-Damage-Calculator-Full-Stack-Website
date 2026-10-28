@@ -12,7 +12,7 @@ A full-stack Django web app for calculating Pokémon battle damage and browsing 
 
 This project pulls Pokémon species, moves, learnsets, and type matchups from PokeAPI into a local database, then uses that data to power a damage calculator and a browsable Pokédex. The damage engine models real battle mechanics — abilities, held items, weather, terrain, status conditions, stat stages, screens, and real stats from EVs, IVs, natures, and levels.
 
-Every full damage result in the tests was checked roll for roll against [Smogon's damage calculator](https://calc.pokemonshowdown.com/).
+The damage formula is based on [Smogon's open-source damage calculator](https://github.com/smogon/damage-calc): the same steps, in the same order, with the same rounding. Every full damage result in the tests was checked roll for roll against [Smogon's calc](https://calc.pokemonshowdown.com/). See [Credits & Attribution](#credits--attribution).
 
 ## Features
 
@@ -49,11 +49,14 @@ source venv/bin/activate    # Windows: venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
+# Turn on local development mode (lasts until you close this terminal)
+export DJANGO_DEBUG=True    # Windows PowerShell: $env:DJANGO_DEBUG="True"
+
 # Set up the database and load the saved Pokémon data
 python manage.py migrate
 python manage.py loaddata pokedata
 
-# Run the dev server
+# Run the server
 python manage.py runserver
 ```
 
@@ -73,6 +76,8 @@ python manage.py import_learnset
 ```bash
 python manage.py test
 ```
+
+Run it in a terminal where `DJANGO_DEBUG` is set, like in Getting Started.
 
 296 tests cover:
 
