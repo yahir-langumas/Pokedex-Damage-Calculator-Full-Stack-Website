@@ -1,6 +1,6 @@
 # Pokédex Damage Calculator
 
-[![Tests](https://github.com/yahir-langumas/Pokedex-Damage-Calculator-Full-Stack-Website/actions/workflows/tests.yml/badge.svg)](https://github.com/yahir-langumas/Pokedex-Damage-Calculator-Full-Stack-Website/actions/workflows/tests.yml)
+[![Tests](https://github.com/yahir-langumas/pokedex-damage-calc/actions/workflows/tests.yml/badge.svg)](https://github.com/yahir-langumas/pokedex-damage-calc/actions/workflows/tests.yml)
 
 A full-stack Django web app for calculating Pokémon battle damage and browsing the Pokédex, built on [PokeAPI](https://pokeapi.co/) data. Pick an attacker, a defender and a move to see all 16 damage rolls, how much HP it takes and the chance to KO, using real Gen 9 battle mechanics.
 
@@ -39,8 +39,8 @@ The team builder is next — see the [roadmap](#roadmap).
 
 ```bash
 # Clone and enter the project
-git clone https://github.com/yahir-langumas/Pokedex-Damage-Calculator-Full-Stack-Website.git
-cd Pokedex-Damage-Calculator-Full-Stack-Website
+git clone https://github.com/yahir-langumas/pokedex-damage-calc.git
+cd pokedex-damage-calc
 
 # Set up a virtual environment
 python -m venv venv
