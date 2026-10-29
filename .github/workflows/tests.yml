@@ -37,6 +37,9 @@ jobs:
       - name: Check the models match the migrations
         run: python manage.py makemigrations --check --dry-run
 
+      - name: Collect the static files
+        run: python manage.py collectstatic --noinput
+        
       - name: Run tests
         run: coverage run --source=pokedata --omit="pokedata/migrations/*,pokedata/tests.py" manage.py test --verbosity 2
 
