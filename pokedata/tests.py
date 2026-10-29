@@ -1,11 +1,3 @@
-from unittest.mock import Mock, patch
-import requests
-from django.core.management import call_command
-from django.test import TestCase
-from django.urls import reverse
-from pokedata.models import Learnset, Moves, Species, Type
-from pokedata.damage_calculator import DamageCalculator, apply_stage, chain_modifiers, damage_rolls, ko_chance_text, modifier_from, poke_round, to_4096
-from pokedata.stats import calculate_stats, make_build
 import importlib
 from unittest.mock import Mock, patch
 import requests
@@ -13,6 +5,9 @@ from django.core.management import call_command
 from django.test import TestCase
 from django.urls import clear_url_caches, reverse
 import config.urls
+from pokedata.models import Learnset, Moves, Species, Type
+from pokedata.damage_calculator import DamageCalculator, apply_stage, chain_modifiers, damage_rolls, ko_chance_text, modifier_from, poke_round, to_4096
+from pokedata.stats import calculate_stats, make_build
 
 # Builds a DamageCalculator from Pokémon and move names.
 def make_calc(attacker, defender, move, attacker_ability=None, defender_ability=None, attacker_item=None, defender_item=None, weather=None, attacker_build=None, defender_build=None):
