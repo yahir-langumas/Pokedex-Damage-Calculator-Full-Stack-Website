@@ -16,12 +16,13 @@ The damage formula is based on [Smogon's open-source damage calculator](https://
 
 ## Features
 
-- **Damage calculator page** — set each side's Pokémon, move, ability, item, level, nature, EVs, IVs, stat stages, status, and current HP, plus weather, terrain, critical hits, and Reflect / Light Screen / Aurora Veil. Results update live as you change things, and every calc has its own link you can share.
-- **Full results** — all 16 damage rolls, the damage as a % of HP, the KO chance, an HP bar, and a Smogon-style summary line, like `252 Atk Life Orb Garchomp Earthquake vs. 252 HP / 0 Def Kingambit: 195-229 (94.2 - 110.6%) -- 56.2% chance to OHKO`.
-- **Damage engine** — the full Gen 9 damage formula with the games' exact rounding, all 314 abilities, all 218 battle-relevant held items, multi-hit moves, moves whose power changes (Low Kick, Eruption, Gyro Ball, Knock Off, and more), set-damage moves, immunities, and battle forms (Primal Groudon and Kyogre, Origin Formes, Ogerpon's masks, Arceus, Silvally, Castform, and Aegislash).
-- **Stat calculator** — turns base stats into real stats using level (1–50, default 50 like most competitive formats), EVs, IVs, and natures, with checks that every build is legal.
-- **Pokédex** — search all 1,025 Pokémon by name to see their types and base stat totals. Click any Pokémon for quick links to its Bulbapedia page, its Smogon sets, and its Limitless VGC tournament results.
-- **Moves page** (`/moves/`) — every move with its type, category, power, accuracy, and PP.
+- **Damage calculator:** pick two Pokémon, a move, and each side's build (ability, item, nature, EVs/IVs, stat boosts, status), plus weather, terrain, and screens. Results update live, and every calc has a link you can share.
+- **Results:** all 16 damage rolls, the % of HP, the KO chance, and a Smogon-style summary line.
+- **Damage engine:** the Gen 9 damage formula with all 314 abilities and 218 held items, including multi-hit moves, moves whose power changes, and battle forms.
+- **Pokédex:** search all 1,025 Pokémon, with links to each one's Bulbapedia, Smogon, and Limitless VGC pages.
+- **Moves page:** every move with its type, category, power, accuracy, and PP.
+
+The team builder is next (see the [roadmap](#roadmap)).
 
 The team builder is next — see the [roadmap](#roadmap).
 
