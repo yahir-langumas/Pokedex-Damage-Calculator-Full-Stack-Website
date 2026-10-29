@@ -4,7 +4,7 @@
 
 A full-stack Django web app for calculating Pokémon battle damage and browsing the Pokédex, built on [PokeAPI](https://pokeapi.co/) data. Pick an attacker, a defender and a move to see all 16 damage rolls, how much HP it takes and the chance to KO, using real Gen 9 battle mechanics.
 
-**Live site:** coming soon — see the [roadmap](#roadmap).
+**Live site:** [pokecalc.0fq2cg9mvkzy8.us-east-2.cs.amazonlightsail.com](https://pokecalc.0fq2cg9mvkzy8.us-east-2.cs.amazonlightsail.com/)
 
 ![The damage calculator updating live as Life Orb, a critical hit and a new defender are picked](docs/images/damage-calculator.gif)
 
@@ -34,6 +34,7 @@ The team builder is next — see the [roadmap](#roadmap).
 - **Data source:** [PokeAPI](https://pokeapi.co/) via the `requests` library
 - **Frontend:** Server-rendered HTML/CSS/vanilla JS — no frontend framework
 - **Testing & CI:** Django's test framework, with GitHub Actions running the tests, Ruff linting, and a coverage report on every push and pull request
+- **Deployment:** Docker (Gunicorn + WhiteNoise) on AWS Lightsail Containers
 
 ## Getting Started
 
@@ -79,12 +80,13 @@ python manage.py test
 
 Run it in a terminal where `DJANGO_DEBUG` is set, like in Getting Started.
 
-296 tests cover:
+299 tests cover:
 
 - **The damage engine** — type effectiveness, weather, terrain, abilities, held items, stats, and every step of the damage formula. The full damage results in the tests were checked against Smogon's calculator.
 - **The calculator page** — results, form validation, and the endpoint that fills in each Pokémon's abilities and moves.
 - **The home page and nav bar.**
 - **The PokeAPI import commands** — with the API faked, so the tests never make real requests.
+- **The live site setup** — the health check the load balancer uses, and the admin site staying off the live site.
 
 GitHub Actions runs every test on each push and pull request.
 
@@ -103,8 +105,8 @@ Actively in progress.
 - [x] Damage engine — the full Gen 9 damage formula, all 314 abilities, and all 218 held items
 - [x] Damage calculator page with live results and shareable links
 - [x] Pokédex and moves page
-- [x] 296 tests running on every push with GitHub Actions
-- [ ] **Going live** — deploy with Docker on AWS, with the link at the top of this page
+- [x] 299 tests running on every push with GitHub Actions
+- [x] **Going live** — running in Docker on AWS Lightsail, with the link at the top of this page
 - [ ] **Team builder** — build a team of six and check its matchups with the damage calculator
 - [ ] **Multi-hit moves** — pick how many times 2–5 hit moves hit (they count as 3 hits for now)
 - [ ] **Accounts and saved teams** — sign up and log in to save your teams and come back to them

@@ -6,6 +6,13 @@ from django.urls import reverse
 from pokedata.models import Learnset, Moves, Species, Type
 from pokedata.damage_calculator import DamageCalculator, apply_stage, chain_modifiers, damage_rolls, ko_chance_text, modifier_from, poke_round, to_4096
 from pokedata.stats import calculate_stats, make_build
+import importlib
+from unittest.mock import Mock, patch
+import requests
+from django.core.management import call_command
+from django.test import TestCase
+from django.urls import clear_url_caches, reverse
+import config.urls
 
 # Builds a DamageCalculator from Pokémon and move names.
 def make_calc(attacker, defender, move, attacker_ability=None, defender_ability=None, attacker_item=None, defender_item=None, weather=None, attacker_build=None, defender_build=None):
@@ -1909,3 +1916,41 @@ class HomePageTests(TestCase):
         response = self.client.get(reverse("home"))
         self.assertContains(response, "Coming soon")
         self.assertNotContains(response, f'href="{reverse("team_builder")}"')
+
+
+class HealthCheckTests(TestCase):
+    # The health check answers even when the Host header isn't in ALLOWED_HOSTS, like Lightsail's load balancer.
+    def test_health_check_any_host(self):
+        response = self.client.get("/health/", HTTP_HOST="10.0.0.5")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"ok")
+
+    # Every other page still turns away hosts that aren't in ALLOWED_HOSTS.
+    def test_other_pages_check_host(self):
+        response = self.client.get("/", HTTP_HOST="10.0.0.5")
+        self.assertEqual(response.status_code, 400)
+
+class AdminSiteTests(TestCase):
+    # The admin site is turned off when DEBUG is off, like on the live site.
+    def test_admin_off_without_debug(self):
+        response = self.client.get("/admin/")
+        self.assertEqual(response.status_code, 404)
+
+class AdminSiteTests(TestCase):
+    # Reloads the URLs, since urls.py only checks DEBUG when it's first loaded.
+    def reload_urls(self):
+        importlib.reload(config.urls)
+        clear_url_caches()
+
+    # The admin site is turned off when DEBUG is off, like on the live site.
+    def test_admin_off_without_debug(self):
+        response = self.client.get("/admin/")
+        self.assertEqual(response.status_code, 404)
+
+    # The admin site is on when DEBUG is on, like when running it locally.
+    def test_admin_on_with_debug(self):
+        self.addCleanup(self.reload_urls)
+        with self.settings(DEBUG=True):
+            self.reload_urls()
+            response = self.client.get("/admin/login/")
+        self.assertEqual(response.status_code, 200)
