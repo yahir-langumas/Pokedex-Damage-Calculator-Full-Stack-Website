@@ -1925,11 +1925,6 @@ class HealthCheckTests(TestCase):
         response = self.client.get("/", HTTP_HOST="10.0.0.5")
         self.assertEqual(response.status_code, 400)
 
-class AdminSiteTests(TestCase):
-    # The admin site is turned off when DEBUG is off, like on the live site.
-    def test_admin_off_without_debug(self):
-        response = self.client.get("/admin/")
-        self.assertEqual(response.status_code, 404)
 
 class AdminSiteTests(TestCase):
     # Reloads the URLs, since urls.py only checks DEBUG when it's first loaded.

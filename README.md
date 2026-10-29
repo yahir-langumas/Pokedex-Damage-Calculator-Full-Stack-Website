@@ -78,9 +78,9 @@ python manage.py import_learnset
 python manage.py test
 ```
 
-Run it in a terminal where `DJANGO_DEBUG` is set, like in Getting Started.
+Make sure `DJANGO_DEBUG` is set in your terminal first (see Getting Started).
 
-299 tests cover:
+There are 300 tests covering:
 
 - **The damage engine** — type effectiveness, weather, terrain, abilities, held items, stats, and every step of the damage formula. The full damage results in the tests were checked against Smogon's calculator.
 - **The calculator page** — results, form validation, and the endpoint that fills in each Pokémon's abilities and moves.
@@ -88,7 +88,7 @@ Run it in a terminal where `DJANGO_DEBUG` is set, like in Getting Started.
 - **The PokeAPI import commands** — with the API faked, so the tests never make real requests.
 - **The live site setup** — the health check the load balancer uses, and the admin site staying off the live site.
 
-GitHub Actions runs every test on each push and pull request.
+GitHub Actions runs all the tests on every push and pull request.
 
 ## Credits & Attribution
 
