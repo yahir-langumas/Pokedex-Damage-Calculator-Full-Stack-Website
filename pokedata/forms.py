@@ -167,3 +167,34 @@ def current_hp(max_hp, percent):
     if percent is None:
         return max_hp
     return max(1, max_hp * percent // 100)
+
+
+
+# Team Builder Form
+
+TEAM_SIZE = 6
+
+
+# The six slots on the team builder page. Each slot takes a Pokémon's name.
+class TeamForm(forms.Form):
+    # Adds a text box for each slot.
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for slot in range(1, TEAM_SIZE + 1):
+            self.fields[f"pokemon_{slot}"] = forms.CharField(label=f"Pokémon {slot}", required=False, widget=forms.TextInput(attrs={"list": "pokemon-names", "autocomplete": "off", "spellcheck": "false", "placeholder": "Pick a Pokémon"}))
+
+    # Looks up each slot's Pokémon. Like in real formats, a team can't have the same Pokémon twice.
+    def clean(self):
+        data = super().clean()
+        team = []
+        for slot in range(1, TEAM_SIZE + 1):
+            name = (data.get(f"pokemon_{slot}") or "").strip().lower()
+            species = Species.objects.filter(name=name).first() if name else None
+            if name and species is None:
+                self.add_error(f"pokemon_{slot}", f"{name} isn't a Pokémon.")
+            elif species is not None and species in team:
+                self.add_error(f"pokemon_{slot}", f"{pretty(species.name)} is already on your team.")
+                species = None
+            team.append(species)
+        data["team"] = team
+        return data
